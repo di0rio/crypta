@@ -14,7 +14,7 @@ export function createQuest(scene, world, player, ui, onPick) {
     const glow = new THREE.Mesh(halo, new THREE.MeshBasicMaterial({ color: '#ffb23d', transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }));
     const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: '#ffcf7a', transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
     g.add(core, glow); g.position.set(x, y, z); beam.position.set(x, y, z); scene.add(g, beam);
-    return { g, core, glow, beam, x, y, z, i, phase: i * 1.7, taken: false, t: 0 };
+    return { g, core, glow, beam, x, y, z, i, phase: i * 1.7, taken: false, t: 0, pull: 0 };
   });
   const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.1, 3).rotateX(Math.PI / 2).scale(1, 0.25, 1),
     new THREE.MeshBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0.8, depthWrite: false }));
@@ -48,12 +48,19 @@ export function createQuest(scene, world, player, ui, onPick) {
           continue;
         }
         e.g.rotation.y = elapsed * 1.3 + e.phase;
-        e.g.position.y = e.y + Math.sin(elapsed * 1.8 + e.phase) * 0.22;
+        e.g.position.set(e.x, e.y + Math.sin(elapsed * 1.8 + e.phase) * 0.22 * (1 - Math.min(1, e.pull)), e.z);
         e.glow.scale.setScalar(1 + Math.sin(elapsed * 3 + e.phase) * 0.12);
         e.beam.material.opacity = 0.055 + Math.sin(elapsed * 1.1 + e.phase) * 0.02;
         const dx = p.x - e.x, dz = p.z - e.z, dy = p.y + 1.3 - e.y, d2 = dx * dx + dz * dz;
         if (d2 < nd) { nd = d2; near = e; }
-        if (d2 < 3.6 * 3.6 && Math.abs(dy) < 4) {
+        // once the wanderer is close the ember lets go and flies to them, faster and faster
+        if (e.pull > 0 || (d2 < 6.5 * 6.5 && Math.abs(dy) < 6)) {
+          e.pull += dt * 2.4; e.beam.visible = false;
+          const k = Math.min(1, dt * (2 + e.pull * 9));
+          e.x += (p.x - e.x) * k; e.z += (p.z - e.z) * k; e.y += (p.y + 1.7 - e.y) * k;
+          e.g.scale.setScalar(1 - Math.min(0.5, e.pull * 0.25));
+        }
+        if (d2 < 1.3 * 1.3 && Math.abs(dy - 0.4) < 2.2) {
           take(e, false);
           if (count === embers.length) ui.say('A Torre desperta.');
           else if (count === 1) ui.say('Uma brasa. Seu fôlego cresce.');

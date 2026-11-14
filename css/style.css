@@ -34,6 +34,7 @@ html, body { height: 100%; overflow: hidden; background: #05070d; color: #f2ede2
 
 #embers { position: absolute; top: 22px; left: 28px; font-size: 13px; letter-spacing: .32em; opacity: .85;
   text-shadow: 0 1px 6px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; color: #ffe2a6; }
+#embers { transform-origin: left center; }
 #embers.flash { animation: ember .9s ease-out; }
 @keyframes ember { 0% { transform: scale(1.35); color: #fff; text-shadow: 0 0 18px #ffb23d; } 100% { transform: scale(1); } }
 #toast { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); font-family: Georgia, serif; font-size: 22px;

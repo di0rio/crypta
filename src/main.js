@@ -21,7 +21,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.06;
+renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 2400);
@@ -39,10 +39,10 @@ wu.uLightDir.value = sky.lightDir; wu.uLightCol.value = sky.lightCol;
 
 // final grade, after tone mapping: gentle contrast curve, saturation, vignette, a little grain
 const Grade = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 0 }, uFlash: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform float uTime, uWarm; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime, uWarm, uFlash; varying vec2 vUv;
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
       c = mix(c, c * c * (3.0 - 2.0 * c), 0.28);
@@ -51,6 +51,7 @@ const Grade = {
       c *= mix(vec3(1.0), vec3(1.05, 1.0, 0.93), uWarm);
       vec2 q = vUv - 0.5;
       c *= 1.0 - dot(q, q) * 0.45;
+      c += vec3(1.0, 0.82, 0.45) * uFlash * (0.16 + dot(q, q) * 0.9);
       c += (fract(sin(dot(vUv * 913.0 + uTime, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.018;
       gl_FragColor = vec4(c, 1.0);
     }`
@@ -85,7 +86,7 @@ let toastT = 0;
 const quest = createQuest(scene, world, player, {
   set(n, total, flash) { embersEl.textContent = 'BRASAS ' + n + ' / ' + total; if (flash) { embersEl.classList.remove('flash'); void embersEl.offsetWidth; embersEl.classList.add('flash'); } },
   say(text) { toast.textContent = text; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 4200); }
-}, (e, n, all) => { audio.ember(n, all); fx.sparks(e.x, e.y, e.z); save(); });
+}, (e, n, all) => { audio.ember(n, all); fx.sparks(e.x, e.y, e.z); freeze = 0.07; flash = 1; player.shake = Math.max(player.shake, 0.12); player.squashV = 3; save(); });
 
 // ---------- save (this browser only) ----------
 const SAVE = 'ermo.save.v1';
@@ -115,7 +116,7 @@ $('enter').addEventListener('click', () => {
 
 // ---------- loop ----------
 const timer = new THREE.Clock();
-let elapsed = 0, uiT = 0, fpsAcc = 0, fpsN = 0;
+let elapsed = 0, uiT = 0, fpsAcc = 0, fpsN = 0, freeze = 0, flash = 0;
 const prMax = Math.min(devicePixelRatio, 1.5); let pr = prMax;
 function sim(dt) {
   elapsed += dt; player.update(dt, elapsed); quest.update(dt, elapsed);
@@ -125,7 +126,9 @@ function sim(dt) {
       audio.step(wet ? 'water' : dirt ? 'dirt' : 'grass', ev === 'stepRun');
       if (wet) fx.splash(p); else if (dirt) fx.dust(p, soil, ev === 'stepRun' ? 3 : 1, 1); else if (ev === 'stepRun') fx.dust(p, soil, 2, 0.8);
     } else if (ev === 'jump') { audio.jump(); fx.dust(p, soil, 4, 1.2); }
-    else if (ev === 'land') { audio.land(); if (wet) fx.splash(p); else fx.ring(p, soil); }
+    else if (ev === 'land') { audio.land(); if (wet) fx.splash(p); else fx.ring(p, soil); player.shake = Math.max(player.shake, Math.min(0.22, player.landV * 0.012)); }
+    else if (ev === 'bump') { audio.bump(); fx.leaves(player.hit.x, p.y + 6, player.hit.z, 16, 3.2, '#5faa62'); player.shake = Math.max(player.shake, 0.1); }
+    else if (ev === 'rustle') { audio.rustle(); fx.leaves(player.hit.x, p.y + 1.1, player.hit.z, 5, 1.2, '#9fd66a'); }
     else if (ev === 'roll') { audio.roll(); fx.dust(p, soil, 6, 1.5); }
     else if (ev === 'swim') { audio.swim(); fx.splash(p); }
   }
@@ -146,15 +149,18 @@ function frame() {
     }
   }
   if (!player.active) player.yaw += dt * 0.05;                       // slow orbit behind the title
-  sim(dt);
+  // hit-stop: a few frames of near-freeze when an ember lands
+  if (freeze > 0) { freeze -= raw; sim(dt * 0.06); } else sim(dt);
+  flash *= Math.exp(-5 * dt);
+  if (world.pollLit()) audio.lamp();
   sky.update(dt, player.pos, camera.position, elapsed, player.keys.KeyT ? 60 : 1);
   shared.uTime.value = elapsed; shared.uCloud.value = sky.dayF;
   shared.uFocus.value[0] = player.pos.x; shared.uFocus.value[1] = player.pos.y + 1.6; shared.uFocus.value[2] = player.pos.z;
   audio.update(dt, Math.hypot(player.vel.x, player.vel.z), sky.night, elapsed);
-  world.update(elapsed, sky.night);
+  world.update(elapsed, sky.night, player.pos, dt);
   grass.update(player.pos);
-  bloom.strength = 0.3 + sky.night * 0.35;
-  grade.uniforms.uTime.value = elapsed; grade.uniforms.uWarm.value = sky.dayF * (1 - sky.night);
+  bloom.strength = 0.3 + sky.night * 0.35 + flash * 0.5;
+  grade.uniforms.uFlash.value = flash; grade.uniforms.uTime.value = elapsed; grade.uniforms.uWarm.value = sky.dayF * (1 - sky.night);
   composer.render();
 
   uiT -= dt;

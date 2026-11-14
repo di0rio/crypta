@@ -62,6 +62,9 @@ export function createAudio() {
     swim() { noise(0.4, 'bandpass', 500, 1400, 0.09, 0.7); },
     jump() { noise(0.2, 'bandpass', 500, 1500, 0.07, 1.2); },
     land() { tone(110, 0.14, 0.2, 'sine', 0, 55); noise(0.16, 'lowpass', 900, 200, 0.16); },
+    bump() { tone(150, 0.12, 0.16, 'triangle', 0, 70); noise(0.5, 'bandpass', 2400, 1200, 0.07, 0.7); },
+    rustle() { noise(0.26, 'bandpass', 2600 + Math.random() * 800, 1500, 0.1, 0.8); },
+    lamp() { tone(1318.5, 0.5, 0.045, 'sine'); tone(1975.5, 0.35, 0.02, 'sine', 0.04); },
     roll() { noise(0.42, 'bandpass', 350, 1300, 0.12, 1.0); },
     ember(n, all) {
       const base = SCALE[n % SCALE.length];

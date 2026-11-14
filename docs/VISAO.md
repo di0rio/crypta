@@ -70,6 +70,25 @@ Andar 6,2 m/s, correr 10,5 m/s com gasto de fôlego, pulo de 1,75 m, rolamento d
 - **Personagem sempre visível**: árvores, pedras e ruínas entre a câmera e ele ficam vazadas.
 - **Resolução adaptativa**: baixa sozinha se o quadro cair, sobe de volta quando sobra.
 
+### Colisão, fluidez e juice — feito
+
+**Colisão**
+- Caixas orientadas com quina arredondada para pilares, blocos caídos e altar (antes eram círculos, e os blocos caídos não tinham colisão).
+- Pedras médias e grandes agora colidem; arbustos são atravessáveis e reagem.
+- Teste automático: 12.600 passos de jogo aleatório em volta de ruínas, árvores e pedras — nenhuma penetração, nenhuma queda pelo chão, nenhum valor inválido.
+
+**Fluidez**
+- Velocidade cheia em 5 quadros, inversão de direção em 7, parada em 7.
+- Pulo e rolamento com buffer (apertar um pouco antes ainda conta) e tolerância ao sair de uma borda; pulo curto ao soltar cedo.
+- Rolamento dirigível, cancelável em pulo, e devolve a velocidade no fim (nunca cai abaixo da de caminhada).
+- Bater ou raspar em obstáculo desliza sem perder velocidade.
+- Fôlego menos punitivo; câmera colada no personagem; zoom suave.
+
+**Juice**
+- Squash & stretch em mola no pulo, pouso e rolamento; tremor de câmera proporcional à queda.
+- Brasa voa até o personagem; ao pegar: micro-congelamento, clarão, faíscas, acorde.
+- Lanternas acendem quando ele passa, com som; arbustos farfalham e soltam folhas; árvore balança folhas na trombada.
+
 ## Próximas etapas
 
 1. **Polir o personagem** — modelo com mais forma (mãos, rosto, roupa com dobra), pés que acompanham o chão (IK), transições de animação, poeira e pegadas.

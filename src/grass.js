@@ -35,7 +35,7 @@ void main() {
   float d = distance(wp, uPlayer.xz);
   float s = 1.0 - smoothstep(uPatch * 0.34, uPatch * 0.5, d);
   s *= smoothstep(2.0, 3.4, h) * (1.0 - smoothstep(120.0, 150.0, h)) * (1.0 - smoothstep(0.4, 0.62, slope));
-  s *= smoothstep(0.7, 2.6, distance(vec3(wp.x, h, wp.y), cameraPosition));   // keep blades out of the lens
+  s *= smoothstep(1.5, 5.5, distance(vec3(wp.x, h, wp.y), cameraPosition));   // keep blades out of the lens
   float big = wfbm(wp * 0.03);                       // meadow-scale variation: tall lush vs short dry
   float clump = wnoise(wp * 0.45);
   float m = mAt(wp);                                  // 0 trail, ~0.25 lawn, 1 meadow
@@ -162,7 +162,7 @@ export function createGrass(scene, world, sky) {
   return {
     update(playerPos) {
       common.uPlayer.value.copy(playerPos);
-      uniforms.uAmb.value.copy(sky.ambient); uniforms.uSun.value.copy(sky.lightCol).multiplyScalar(0.36);
+      uniforms.uAmb.value.copy(sky.ambient); uniforms.uSun.value.copy(sky.lightCol).multiplyScalar(0.25);
       uniforms.uSunDir.value.copy(sky.lightDir);
       fu.uNight.value = sky.night;
     }

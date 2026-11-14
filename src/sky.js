@@ -137,7 +137,7 @@ export class Sky {
     u.uNight.value = night; u.uTime.value = elapsed;
 
     // one shadow-casting light: the sun by day, the moon by night
-    const sunI = smoothstep(-0.04, 0.16, sy) * 2.7, moonI = smoothstep(-0.02, -0.2, sy) * 1.8;
+    const sunI = smoothstep(-0.04, 0.16, sy) * 2.25, moonI = smoothstep(-0.02, -0.2, sy) * 1.8;
     if (sunI >= moonI) { this.lightDir.copy(this.sunDir); this.sun.color.copy(u.uSunCol.value); this.sun.intensity = sunI; }
     else { this.lightDir.copy(this.sunDir).negate(); this.sun.color.copy(K.moon); this.sun.intensity = moonI; }
     if (this.lightDir.y < 0.1) { this.lightDir.y = 0.1; this.lightDir.normalize(); }
@@ -146,8 +146,8 @@ export class Sky {
     this.lightCol.copy(this.sun.color).multiplyScalar(this.sun.intensity);
 
     this.hemi.color.copy(this.top).lerp(this.hor, 0.5).lerp(K.moon, night * 0.5);
-    this.hemi.intensity = lerp(1.05, 1.28, dayF) + tw * 0.25;
-    this.ambient.copy(this.hemi.color).multiplyScalar(Math.min(this.hemi.intensity, 1.0) * 0.6);
+    this.hemi.intensity = lerp(1.05, 1.12, dayF) + tw * 0.25;
+    this.ambient.copy(this.hemi.color).multiplyScalar(Math.min(this.hemi.intensity, 1.0) * 0.52);
     this.fog.color.copy(this.hor).multiplyScalar(lerp(0.75, 0.95, dayF));
     this.fog.density = lerp(0.0017, 0.0009, dayF) + tw * 0.0006;
 

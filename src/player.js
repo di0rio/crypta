@@ -141,9 +141,11 @@ export class Player {
     this.grounded = true; this.swim = false;
     this.stamina = 100; this.maxStamina = 100; this.staminaWait = 0; this.exhausted = false;
     this.roll = 0; this.phase = 0; this.airT = 0; this.land = 0;
-    this.yaw = 0; this.pitch = 0.52; this.dist = 18; this.fov = 30;
+    this.yaw = 0; this.pitch = 0.52; this.dist = 18; this.distT = 18; this.jumpBuf = 0; this.rollBuf = 0; this.coyote = 0; this.fov = 30;
     this.camTarget = this.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
     this.keys = {}; this.active = false; this.events = []; this.stepN = 0;
+    this.hit = { tree: false, bush: false, x: 0, z: 0 }; this.bumpCd = 0; this.rustleCd = 0;
+    this.squash = 0; this.squashV = 0; this.shake = 0; this.shakeT = 0; this.landV = 0;
     this._sl = new THREE.Vector2(); this._v = new THREE.Vector3();
     this.pose = { legL: 0, legR: 0, kneeL: 0, kneeR: 0, armL: 0, armR: 0, elbowL: 0, elbowR: 0, armZ: 0.12, lean: 0, bob: 0, tilt: 0 };
 
@@ -158,7 +160,7 @@ export class Player {
       if (!this.active || (document.pointerLockElement !== dom && !drag)) return;
       this.yaw -= e.movementX * 0.0026; this.pitch = clamp(this.pitch + e.movementY * 0.0022, 0.22, 1.4);
     });
-    dom.addEventListener('wheel', (e) => { this.dist = clamp(this.dist + Math.sign(e.deltaY) * 1.2, 7, 34); }, { passive: true });
+    dom.addEventListener('wheel', (e) => { this.distT = clamp(this.distT + Math.sign(e.deltaY) * 1.6, 7, 34); }, { passive: true });
   }
 
   update(dt, elapsed) {
@@ -178,45 +180,61 @@ export class Player {
 
     // stamina
     const wantSprint = this.active && (k.ShiftLeft || k.ShiftRight) && il > 0 && !this.exhausted && !this.swim;
-    if (wantSprint && this.grounded) { this.stamina -= 13 * dt; this.staminaWait = 0.9; }
-    else if (this.staminaWait > 0) this.staminaWait -= dt; else this.stamina = Math.min(this.maxStamina, this.stamina + 26 * dt);
+    if (wantSprint && this.grounded) { this.stamina -= 9 * dt; this.staminaWait = 0.5; }
+    else if (this.staminaWait > 0) this.staminaWait -= dt; else this.stamina = Math.min(this.maxStamina, this.stamina + 36 * dt);
     if (this.stamina <= 0) { this.stamina = 0; this.exhausted = true; }
-    if (this.exhausted && this.stamina > 30) this.exhausted = false;
+    if (this.exhausted && this.stamina > 14) this.exhausted = false;
+
+    // buffered inputs: a press slightly too early still counts; coyote time forgives leaving a ledge
+    this.jumpBuf -= dt; this.rollBuf -= dt;
+    if (this.active && k.Space) this.jumpBuf = 0.12;
+    if (this.active && (k.KeyQ || k.Roll)) this.rollBuf = 0.16;
+    this.coyote = this.grounded ? 0.12 : this.coyote - dt;
 
     // roll
-    if (this.active && (k.KeyQ || k.Roll) && this.roll <= 0 && this.grounded && !this.swim && this.stamina > 18) {
-      this.roll = 0.6; this.stamina -= 18; this.staminaWait = 0.9; this.events.push('roll');
+    if (this.rollBuf > 0 && this.roll <= 0 && this.coyote > 0 && !this.swim && this.stamina > 8) {
+      this.rollBuf = 0;
+      this.roll = 0.5; this.stamina -= 12; this.staminaWait = 0.5; this.events.push('roll'); this.squashV = -2.6;
       if (il > 0) this.heading = Math.atan2(wx, wz);
     }
     k.Roll = false;
 
-    const maxSpeed = this.swim ? 3.2 : wantSprint ? 10.5 : 6.2;
+    const maxSpeed = this.swim ? 4.4 : wantSprint ? 10.5 : 6.2;
     if (this.roll > 0) {
       this.roll -= dt;
-      const rs = 12 * Math.min(1, this.roll / 0.25 + 0.35);
+      // steerable, and it hands its speed back to the run instead of stalling at the end
+      if (il > 0) this.heading = dampAngle(this.heading, Math.atan2(wx, wz), 1 - Math.exp(-7 * dt));
+      const rs = lerp(Math.max(maxSpeed, 7.5), 13.5, Math.min(1, this.roll / 0.35));
       v.x = Math.sin(this.heading) * rs; v.z = Math.cos(this.heading) * rs;
     } else {
-      const acc = this.grounded || this.swim ? 11 : 2.5, kk = 1 - Math.exp(-acc * dt);
+      const acc = this.grounded ? 28 : this.swim ? 12 : 8, kk = 1 - Math.exp(-acc * dt);
       v.x += (wx * maxSpeed - v.x) * kk; v.z += (wz * maxSpeed - v.z) * kk;
     }
 
     // steep slopes push back down
     w.getSlope(p.x, p.z, this._sl);
     const steep = this._sl.length();
-    if (this.grounded && steep > 1.0) { const f = (steep - 1.0) * 22 * dt; v.x -= this._sl.x / steep * f; v.z -= this._sl.y / steep * f; }
+    if (this.grounded && steep > 1.4) { const f = (steep - 1.4) * 16 * dt; v.x -= this._sl.x / steep * f; v.z -= this._sl.y / steep * f; }
 
     // jump + gravity
-    if (this.active && k.Space && this.grounded && this.roll <= 0 && !this.swim) { v.y = 10.5; this.grounded = false; this.events.push('jump'); }
+    if (this.jumpBuf > 0 && this.coyote > 0 && this.roll < 0.3 && !this.swim) {
+      v.y = 10.5; this.grounded = false; this.coyote = 0; this.jumpBuf = 0; this.roll = 0; this.events.push('jump'); this.squashV = 3.4;
+    }
+    if (!k.Space && v.y > 4.5 && !this.grounded) v.y -= 38 * dt;          // release early = shorter hop
     v.y -= 30 * dt;
     p.x += v.x * dt; p.z += v.z * dt; p.y += v.y * dt;
     const lim = w.SIZE / 2 - 12; p.x = clamp(p.x, -lim, lim); p.z = clamp(p.z, -lim, lim);
-    w.resolve(p, 0.55);
+    const spd0 = Math.hypot(v.x, v.z);
+    w.resolve(p, 0.55, this.hit);
+    this.bumpCd -= dt; this.rustleCd -= dt;
+    if (this.hit.tree && spd0 > 5.5 && this.bumpCd <= 0) { this.bumpCd = 0.6; this.events.push('bump'); this.squashV = -1.6; }
+    if (this.hit.bush && spd0 > 2 && this.rustleCd <= 0) { this.rustleCd = 0.3; this.events.push('rustle'); }
 
     const g2 = w.getHeight(p.x, p.z), floorY = Math.max(g2, w.WATER - 1.15);
     const wasAir = !this.grounded;
     if (p.y <= floorY + (this.grounded ? 0.35 : 0)) {
-      if (wasAir && this.airT > 0.12) this.events.push('land');
-      if (wasAir && v.y < -9) this.land = 0.22;
+      if (wasAir && this.airT > 0.12) { this.events.push('land'); this.landV = -v.y; this.squashV = -Math.min(5.5, 1.5 + this.landV * 0.28); }
+      if (wasAir && v.y < -17) this.land = 0.18;
       p.y = floorY; v.y = 0; this.grounded = true; this.airT = 0;
     } else { this.grounded = false; this.airT += dt; }
     if (this.land > 0) this.land -= dt;
@@ -224,7 +242,7 @@ export class Player {
     // facing
     const sp = Math.hypot(v.x, v.z);
     const prevH = this.heading;
-    if (sp > 0.6 && this.roll <= 0) this.heading = dampAngle(this.heading, Math.atan2(v.x, v.z), 1 - Math.exp(-12 * dt));
+    if (sp > 0.6 && this.roll <= 0) this.heading = dampAngle(this.heading, Math.atan2(v.x, v.z), 1 - Math.exp(-20 * dt));
     let dh = this.heading - prevH; if (dh > Math.PI) dh -= Math.PI * 2; if (dh < -Math.PI) dh += Math.PI * 2;
     this.turn = lerp(this.turn, dh / Math.max(dt, 1e-4), 1 - Math.exp(-8 * dt));
 
@@ -268,7 +286,7 @@ export class Player {
     }
     if (this.land > 0) { t.bob -= 0.22 * (this.land / 0.22); t.kneeL += 0.5; t.kneeR += 0.5; t.legL -= 0.35; t.legR -= 0.35; }
 
-    const kq = 1 - Math.exp(-(this.roll > 0 ? 22 : 15) * dt);
+    const kq = 1 - Math.exp(-(this.roll > 0 ? 26 : 21) * dt);
     for (const key in t) P[key] += (t[key] - P[key]) * kq;
 
     r.legL.rotation.x = P.legL; r.legR.rotation.x = P.legR; r.kneeL.rotation.x = P.kneeL; r.kneeR.rotation.x = P.kneeR;
@@ -299,6 +317,11 @@ export class Player {
     r.poncho.rotation.x = -P.lean * 0.3 - f * 0.1;
     r.poncho.scale.set(flare, 1 - Math.max(0, fall) * 0.1, flare);
 
+    // squash & stretch on a damped spring
+    this.squashV += (-this.squash * 190 - this.squashV * 15) * dt; this.squash += this.squashV * dt;
+    const q = clamp(this.squash, -0.35, 0.35);
+    r.root.scale.set(1.45 * (1 - q * 0.55), 1.45 * (1 + q), 1.45 * (1 - q * 0.55));
+
     r.root.position.copy(this.pos);
     r.root.rotation.y = this.heading;
   }
@@ -306,14 +329,20 @@ export class Player {
   updateCamera(dt, sprint) {
     const cam = this.camera, w = this.world;
     this._v.set(this.pos.x, this.pos.y + 1.5, this.pos.z);
-    const kxz = 1 - Math.exp(-9 * dt), ky = 1 - Math.exp(-5 * dt);
+    const kxz = 1 - Math.exp(-22 * dt), ky = 1 - Math.exp(-12 * dt);
+    this.dist += (this.distT - this.dist) * (1 - Math.exp(-10 * dt));
     this.camTarget.x += (this._v.x - this.camTarget.x) * kxz; this.camTarget.z += (this._v.z - this.camTarget.z) * kxz;
     this.camTarget.y += (this._v.y - this.camTarget.y) * ky;
     const cp = Math.cos(this.pitch);
     cam.position.set(this.camTarget.x + Math.sin(this.yaw) * cp * this.dist, this.camTarget.y + Math.sin(this.pitch) * this.dist, this.camTarget.z + Math.cos(this.yaw) * cp * this.dist);
-    const minY = Math.max(w.getHeight(cam.position.x, cam.position.z), w.WATER) + 0.5;
+    const minY = Math.max(w.getHeight(cam.position.x, cam.position.z), w.WATER) + 2.4;
     if (cam.position.y < minY) cam.position.y = minY;
     cam.lookAt(this.camTarget);
+    if (this.shake > 0.002) {
+      this.shakeT += dt;
+      cam.position.x += Math.sin(this.shakeT * 61) * this.shake; cam.position.y += Math.sin(this.shakeT * 73 + 1.3) * this.shake;
+      this.shake *= Math.exp(-9 * dt);
+    }
     this.fov += ((sprint ? 33 : 30) - this.fov) * (1 - Math.exp(-4 * dt));
     if (Math.abs(cam.fov - this.fov) > 0.01) { cam.fov = this.fov; cam.updateProjectionMatrix(); }
   }

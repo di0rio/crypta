@@ -43,7 +43,7 @@ const SEE = /* glsl */`
     { vec3 ro = cameraPosition, rd = uFocus - ro; float L = length(rd); rd /= L;
       float tt = dot(vWPos - ro, rd);
       if (tt > 0.0 && tt < L - 1.0) {
-        float cut = 1.0 - smoothstep(1.5, 3.4, length(vWPos - (ro + rd * tt)));
+        float cut = 1.0 - smoothstep(1.0, 2.3, length(vWPos - (ro + rd * tt)));
         if (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) < cut * 0.94) discard;
       } }
 `;

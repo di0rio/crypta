@@ -57,6 +57,9 @@ export function createFx(scene) {
     splash(p) {
       for (let i = 0; i < 10; i++) emit(p.x + rnd(0.6), 0.05, p.z + rnd(0.6), rnd(2.4), 2 + Math.random() * 2.5, rnd(2.4), 0.2 + Math.random() * 0.15, 0.6, '#dff4ff', 0.8, 0.2, -9);
     },
+    leaves(x, y, z, n, spread, color) {
+      for (let i = 0; i < n; i++) emit(x + rnd(spread), y + rnd(spread * 0.6), z + rnd(spread), rnd(1.8), -0.3 - Math.random() * 0.8, rnd(1.8), 0.16 + Math.random() * 0.12, 1.1 + Math.random() * 0.9, i % 3 ? color : '#d9e88a', 0.95, 0, -1.2);
+    },
     sparks(x, y, z) {
       for (let i = 0; i < 36; i++) { const a = Math.random() * 6.28, u = Math.random() * 2 - 1, s = 3 + Math.random() * 5, r = Math.sqrt(1 - u * u);
         emit(x, y, z, Math.cos(a) * r * s, u * s + 2, Math.sin(a) * r * s, 0.22 + Math.random() * 0.2, 0.7 + Math.random() * 0.6, i % 3 ? '#ffd36b' : '#fff6d8', 1, -0.5, -5); }

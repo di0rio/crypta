@@ -159,22 +159,59 @@ export function createWorld(scene) {
   scene.add(water);
 
   // ---------- colliders (trees, pillars): circles in a hash grid ----------
+  // Each entry is 7 floats: [type, x, z, a, b, c, d]
+  //   type 0 = circle (a = radius, b = kind: 0 solid, 1 tree, 2 bush - soft, reports but does not push)
+  //   type 1 = oriented box (a = half width, b = half depth, c = cos, d = sin of its Y rotation)
   const grid = new Map(), GC = 16;
-  function addCollider(x, z, r) {
+  function put(x, z, t, a, b, c, d) {
     const key = Math.floor(x / GC) + ',' + Math.floor(z / GC);
-    let a = grid.get(key); if (!a) grid.set(key, a = []);
-    a.push(x, z, r);
+    let arr = grid.get(key); if (!arr) grid.set(key, arr = []);
+    arr.push(t, x, z, a, b, c, d);
   }
-  function resolve(p, radius) {
+  const addCollider = (x, z, r, kind) => put(x, z, 0, r, kind || 0, 0, 0);
+  const addBox = (x, z, hw, hd, ry) => put(x, z, 1, hw, hd, Math.cos(ry), Math.sin(ry));
+  // pushes p out of every solid; returns the deepest overlap found (before pushing). `hit` reports trees and bushes.
+  function resolve(p, radius, hit, dry) {
     const cx = Math.floor(p.x / GC), cz = Math.floor(p.z / GC);
+    let deep = 0;
+    if (hit) hit.tree = hit.bush = false;
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
       const a = grid.get((cx + i) + ',' + (cz + j)); if (!a) continue;
-      for (let k = 0; k < a.length; k += 3) {
-        const dx = p.x - a[k], dz = p.z - a[k + 1], rr = a[k + 2] + radius, d2 = dx * dx + dz * dz;
-        if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2), push = (rr - d) / d; p.x += dx * push; p.z += dz * push; }
+      for (let k = 0; k < a.length; k += 7) {
+        const dx = p.x - a[k + 1], dz = p.z - a[k + 2];
+        if (a[k] === 0) {
+          const rr = a[k + 3] + radius, d2 = dx * dx + dz * dz;
+          if (d2 >= rr * rr) continue;
+          if (a[k + 4] === 2) { if (hit) { hit.bush = true; hit.x = a[k + 1]; hit.z = a[k + 2]; } continue; }
+          const d = Math.sqrt(d2) || 1e-4;
+          if (rr - d > deep) deep = rr - d;
+          if (hit && a[k + 4] === 1) { hit.tree = true; hit.x = a[k + 1]; hit.z = a[k + 2]; }
+          if (!dry) { const push = (rr - d) / d; p.x += (d2 > 1e-8 ? dx : 1e-4) * push; p.z += dz * push; }
+        } else {
+          const c = a[k + 5], sn = a[k + 6], hw = a[k + 3] + radius, hd = a[k + 4] + radius;
+          let lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+          const px = hw - Math.abs(lx), pz = hd - Math.abs(lz);
+          if (px <= 0 || pz <= 0) continue;
+          if (px < radius && pz < radius) {                 // rounded corner: slide around it instead of snagging
+            const qx = (lx < 0 ? -1 : 1) * (hw - radius), qz = (lz < 0 ? -1 : 1) * (hd - radius), ex = lx - qx, ez = lz - qz, ed = Math.hypot(ex, ez) || 1e-4;
+            if (ed >= radius) continue;
+            if (radius - ed > deep) deep = radius - ed;
+            if (dry) continue;
+            lx = qx + ex / ed * radius; lz = qz + ez / ed * radius;
+            p.x = a[k + 1] + lx * c + lz * sn; p.z = a[k + 2] - lx * sn + lz * c;
+            continue;
+          }
+          if (Math.min(px, pz) > deep) deep = Math.min(px, pz);
+          if (dry) continue;
+          if (px < pz) lx = (lx < 0 ? -hw : hw); else lz = (lz < 0 ? -hd : hd);
+          p.x = a[k + 1] + lx * c + lz * sn; p.z = a[k + 2] - lx * sn + lz * c;
+        }
       }
     }
+    return deep;
   }
+  const probe = { x: 0, z: 0 };
+  const penetration = (x, z, radius) => { probe.x = x; probe.z = z; return resolve(probe, radius, null, true); };
 
   const R = rng(SEED * 101), sl = new THREE.Vector2();
   const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), eu = new THREE.Euler();
@@ -205,7 +242,7 @@ export function createWorld(scene) {
       m4.compose(ps, qt, sc); trunks.setMatrixAt(n, m4); leaves.setMatrixAt(n, m4);
       tmp.copy(colA).lerp(colB, R()); if (R() > 0.92) tmp.lerp(colC, 0.75);
       leaves.setColorAt(n, tmp);
-      addCollider(x, z, 0.45 * s);
+      addCollider(x, z, 0.45 * s, 1);
       n++;
     }
     trunks.count = leaves.count = n;
@@ -233,6 +270,7 @@ export function createWorld(scene) {
     ps.set(x, h + s * 0.25, z); qt.setFromEuler(eu.set(0, R() * 6.28, 0)); sc.set(s * (1 + R() * 0.5), s * 0.7, s * (1 + R() * 0.5));
     m4.compose(ps, qt, sc); bushes.setMatrixAt(nb, m4);
     bushes.setColorAt(nb, tmp.set('#7fbf5a').lerp(tmp2.set('#b7dc6a'), R()).multiplyScalar(1.7));
+    addCollider(x, z, s * 0.9, 2);
     nb++;
   }
   bushes.count = nb; bushes.castShadow = bushes.receiveShadow = true;
@@ -247,7 +285,7 @@ export function createWorld(scene) {
     ps.set(x, h - s * 0.25, z); qt.setFromEuler(eu.set(R() * 6.28, R() * 6.28, R() * 6.28)); sc.set(s * (0.8 + R() * 0.6), s * (0.5 + R() * 0.5), s * (0.8 + R() * 0.6));
     m4.compose(ps, qt, sc); rocks.setMatrixAt(i, m4);
     rocks.setColorAt(i, tmp.copy(rock).lerp(rockD, R()));
-    if (big && Math.hypot(x, z) > 20) addCollider(x, z, s * 0.75);
+    if (s > 0.9 && Math.hypot(x, z) > 14) addCollider(x, z, (sc.x + sc.z) * 0.44);
   }
   rocks.castShadow = rocks.receiveShadow = true;
   scene.add(rocks);
@@ -272,7 +310,8 @@ export function createWorld(scene) {
     acc -= len;
   }
   const lampMat = patch(new THREE.MeshStandardMaterial({ color: '#cfc4b0', roughness: 0.85 }), 'stone');
-  const glowMat = new THREE.MeshStandardMaterial({ color: '#ffd9a0', emissive: '#ffa63d', emissiveIntensity: 1 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+  const lampLevel = new Float32Array(64), lampLit = new Uint8Array(64); let litNow = 0;
   const lamps = new THREE.InstancedMesh(lampGeo, lampMat, lampSpots.length), glows = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), glowMat, lampSpots.length);
   lampSpots.forEach(([x, z, ry], i) => {
     const h = getHeight(x, z) - 0.12;
@@ -314,7 +353,7 @@ export function createWorld(scene) {
     const base = getHeight(x, z) - 1.2;
     block(w * 1.35, 1.6, w * 1.35, x, base + 0.8, z, ry, stoneD);
     block(w, h, w, x, base + 1.6 + h / 2, z, ry);
-    addCollider(x, z, w * 0.8);
+    addBox(x, z, w * 0.675, w * 0.675, ry || 0);
     return base + 1.6 + h;
   }
   const emberSpots = [];
@@ -324,7 +363,11 @@ export function createWorld(scene) {
       const a = i / n * Math.PI * 2, x = cx + Math.cos(a) * rad, z = cz + Math.sin(a) * rad;
       const broken = R() < 0.3, h = broken ? 2.5 + R() * 4 : hBase + R() * 1.5;
       const top = pillar(x, z, 2.4, h, -a);
-      if (broken) { const m = block(2.4, 2.4, 5 + R() * 3, x + Math.cos(a) * 4, getHeight(x + Math.cos(a) * 4, z + Math.sin(a) * 4) + 0.7, z + Math.sin(a) * 4, R() * 3); m.rotation.z = 0.2; }
+      if (broken) {
+        const L = 5 + R() * 3, dr = R() * 3, bx = x + Math.cos(a) * 4, bz = z + Math.sin(a) * 4;
+        const m = block(2.4, 2.4, L, bx, getHeight(bx, bz) + 0.7, bz, dr); m.rotation.z = 0.2;
+        addBox(bx, bz, 1.25, L / 2, dr);
+      }
       const cur = broken ? null : { x, z, top };
       if (cur && prev) {
         const mx = (x + prev.x) / 2, mz = (z + prev.z) / 2, len = Math.hypot(x - prev.x, z - prev.z) + 2.6;
@@ -334,7 +377,7 @@ export function createWorld(scene) {
     }
     block(7, 1.2, 7, cx, getHeight(cx, cz) + 0.2, cz, 0.4, stoneD);     // altar
     block(3, 1.6, 3, cx, getHeight(cx, cz) + 1.4, cz, 0.4);
-    addCollider(cx, cz, 2.4);
+    addBox(cx, cz, 3.5, 3.5, 0.4);
     emberSpots.push([cx, getHeight(cx, cz) + 3.6, cz]);
   }
   function gate(cx, cz, ry) {
@@ -376,9 +419,19 @@ export function createWorld(scene) {
     getHeight, getSlope, resolve, heightTex, waterUniforms, N, SIZE, WATER,
     trailDist, emberSpots,
     wake() { beacon.material.emissiveIntensity = 16; beacon.scale.setScalar(1.6); },
-    update(t, night) {
+    penetration, lampSpots,
+    pollLit() { const n = litNow; litNow = 0; return n; },
+    update(t, night, pp, dt) {
       beacon.rotation.y = t * 0.4; beacon.position.y = y + 14 + Math.sin(t * 0.8) * 1.5;
-      glowMat.emissiveIntensity = 0.5 + night * 5.5 + Math.sin(t * 7) * 0.15 * night;
+      // lanterns glow at night and flare up when the wanderer comes close
+      for (let i = 0; i < lampSpots.length; i++) {
+        const near = pp ? Math.hypot(pp.x - lampSpots[i][0], pp.z - lampSpots[i][1]) < 9 : false;
+        if (near && !lampLit[i]) { lampLit[i] = 1; litNow++; }
+        const target = 0.7 + night * 4.5 + (lampLit[i] ? 1.6 : 0) + (near ? 2.2 : 0) + Math.sin(t * 7 + i) * 0.2;
+        lampLevel[i] += (target - lampLevel[i]) * Math.min(1, (dt || 0.016) * 4);
+        glows.setColorAt(i, tmp.setRGB(lampLevel[i], lampLevel[i] * 0.6, lampLevel[i] * 0.22));
+      }
+      if (glows.instanceColor) glows.instanceColor.needsUpdate = true;
     }
   };
 }

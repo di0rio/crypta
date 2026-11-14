@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { rng } from './noise.js';
+import { patch } from './shade.js';
 
 // Enemies of the wild: shades that stalk and lunge, stone sentinels that fire slow orbs (the sword can bat them back),
 // healing motes dropped by the fallen. All sword hits are resolved here.
@@ -9,10 +10,15 @@ const V2 = (p) => new THREE.Vector2(p[0], p[1]);
 
 function buildShade() {
   const g = new THREE.Group();
-  const cloak = new THREE.MeshStandardMaterial({ color: '#2b2145', roughness: 0.75 });
+  // patched so it dithers away when it stands between the camera and the wanderer
+  const cloak = patch(new THREE.MeshStandardMaterial({ color: '#4a3a86', roughness: 0.6, emissive: '#170f33', emissiveIntensity: 1 }), 'plain');
   const eyeM = new THREE.MeshStandardMaterial({ color: '#ffd0a0', emissive: '#ff6a2a', emissiveIntensity: 3 });
   const body = new THREE.Mesh(new THREE.LatheGeometry([[0.001, 0], [0.75, 0.05], [0.95, 0.5], [0.8, 1.3], [0.55, 1.9], [0.62, 2.3], [0.5, 2.75], [0.001, 3.0]].map(V2), 14), cloak);
   body.castShadow = true; g.add(body);
+  // glowing hem and crest so it reads from above and from behind
+  const hem = new THREE.Mesh(new THREE.TorusGeometry(0.93, 0.07, 6, 20).rotateX(Math.PI / 2), eyeM); hem.position.y = 0.5; g.add(hem);
+  const crest = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), eyeM); crest.position.y = 3.25; g.add(crest);
+  g.scale.setScalar(0.82);
   [-0.22, 0.22].forEach((x) => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), eyeM); e.position.set(x, 2.35, 0.5); g.add(e); });
   [-1, 1].forEach((s) => { const h = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7, 6), cloak); h.position.set(s * 0.38, 3.0, 0); h.rotation.z = -s * 0.5; h.castShadow = true; g.add(h); });
   return { g, eyeM, body };
@@ -130,7 +136,7 @@ export function createCombat(scene, world, player, fx, audio, ui) {
           out.x = e.x; out.z = e.z; out.y = gy; world.resolve(out, e.r, null); e.x = out.x; e.z = out.z;
           if (e.st !== 'lunge' && e.st !== 'wind' && d > 0.1) e.face = Math.atan2(dx, dz);
           const k = e.st === 'wind' ? 1 + (0.5 - e.t) * 0.5 : e.st === 'dying' ? Math.max(0.01, e.t / 0.45) : 1;
-          e.g.scale.set(k, e.st === 'lunge' ? 0.75 : e.st === 'dying' ? k : 1 + Math.sin(elapsed * 3 + e.hx) * 0.04, k);
+          e.g.scale.set(k * 0.82, (e.st === 'lunge' ? 0.75 : e.st === 'dying' ? k : 1 + Math.sin(elapsed * 3 + e.hx) * 0.04) * 0.82, k * 0.82);
           e.g.position.set(e.x, world.getHeight(e.x, e.z) + 0.15 + Math.sin(elapsed * 2.2 + e.hz) * 0.12, e.z);
           e.g.rotation.y = e.face; e.g.rotation.x = e.st === 'lunge' ? 0.5 : e.st === 'hurt' ? -0.35 : 0;
           e.eyeM.emissiveIntensity = e.flash > 0 ? 12 : e.st === 'wind' ? 3 + (0.5 - e.t) * 18 : 3;
@@ -142,7 +148,11 @@ export function createCombat(scene, world, player, fx, audio, ui) {
           e.eyeM.emissiveIntensity = e.flash > 0 ? 14 : e.st === 'aim' ? 2 + (0.6 - e.t) * 16 : 2;
         }
         // bodies do not overlap the wanderer
-        if (!e.dead && d < e.r + 0.7 && d > 1e-3) { const push = (e.r + 0.7 - d); p.x -= dx / d * push * 0.5; p.z -= dz / d * push * 0.5; }
+        if (!e.dead && d < e.r + 0.9 && d > 1e-3) {
+          const push = (e.r + 0.9 - d);
+          if (e.type === 'shade' && e.st !== 'lunge') { e.x -= dx / d * push * 0.6; e.z -= dz / d * push * 0.6; p.x += dx / d * push * 0.4; p.z += dz / d * push * 0.4; }
+          else { p.x += dx / d * push; p.z += dz / d * push; }
+        }
       }
 
       // sentinel orbs: dodge them, or swing at the right moment to send them back

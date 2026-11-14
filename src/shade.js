@@ -41,7 +41,7 @@ const CLOUD = 'diffuseColor.rgb *= 1.0 - 0.5 * uCloud * cloudShadow(vWPos.xz, uT
 const FRAG = {
   terrain: /* glsl */`
     float tn1 = wfbm(vWPos.xz * 0.3), tn2 = wnoise(vWPos.xz * 2.1), tn3 = wfbm(vWPos.xz * 0.035);
-    diffuseColor.rgb *= 0.72 + 0.34 * tn1 + 0.12 * (tn2 - 0.5) + 0.22 * tn3;
+    diffuseColor.rgb *= 0.84 + 0.2 * tn1 + 0.08 * (tn2 - 0.5) + 0.14 * tn3;
     float steep = 1.0 - smoothstep(0.62, 0.88, vWNor.y);
     float strata = wnoise(vec2(vWPos.y * 0.75 + tn1 * 3.0, vWPos.x * 0.04 + vWPos.z * 0.03));
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * (0.62 + 0.62 * strata), steep);

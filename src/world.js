@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { fbm, ridged, vnoise, rng, clamp, lerp, smoothstep } from './noise.js';
 import { patch, NOISE, shared } from './shade.js';
 
@@ -36,6 +37,28 @@ export function createWorld(scene) {
     return out;
   }
 
+  // ---------- trail and grass mask ----------
+  // A dirt trail leads from the spawn, around the first ring, through the gate and on to the Spire.
+  const TRAIL = [[0, 12], [3, -14], [-14, -34], [-21, -52], [-10, -70], [0, -84], [0, -128], [-14, -180], [12, -250], [-6, -330], [4, -420], [0, -500]];
+  function trailDist(x, z) {
+    let best = 1e9;
+    for (let i = 0; i < TRAIL.length - 1; i++) {
+      const ax = TRAIL[i][0], az = TRAIL[i][1], bx = TRAIL[i + 1][0] - ax, bz = TRAIL[i + 1][1] - az;
+      const t = clamp(((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz), 0, 1);
+      const d = Math.hypot(x - ax - bx * t, z - az - bz * t);
+      if (d < best) best = d;
+    }
+    return best - (vnoise(x * 0.09, z * 0.09, 61) - 0.5) * 2.4;
+  }
+  // mask: 0 = bare (trail), ~0.25 = short lawn with tufts, 1 = tall meadow
+  const M = new Float32Array(N * N), TR = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = -HALF + i * CELL, z = -HALF + j * CELL;
+    const meadow = smoothstep(0.4, 0.58, fbm(x * 0.017, z * 0.017, 3, 55));
+    const tr = smoothstep(5.0, 1.6, trailDist(x, z));
+    TR[j * N + i] = tr; M[j * N + i] = (0.24 + 0.76 * meadow) * (1 - tr);
+  }
+
   // ---------- terrain mesh ----------
   const pos = new Float32Array(N * N * 3), idx = new Uint32Array(SEG * SEG * 6);
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -53,13 +76,15 @@ export function createWorld(scene) {
   geo.computeVertexNormals();
 
   const C = (hex) => new THREE.Color(hex);
-  const grassA = C('#4f8a35'), grassB = C('#86a83e'), sand = C('#cdbb8c'), wet = C('#7d7458'),
-    rock = C('#84807a'), rockD = C('#5d5a56'), snow = C('#f1f4f8'), tmp = new THREE.Color(), tmp2 = new THREE.Color();
+  const grassA = C('#6aa84f'), grassB = C('#9ccb62'), sand = C('#e6d3a0'), wet = C('#a39570'),
+    rock = C('#aaa093'), rockD = C('#8a8177'), lawn = C('#9fd066'), dirt = C('#cfae7c'), snow = C('#f1f4f8'), tmp = new THREE.Color(), tmp2 = new THREE.Color();
   const nor = geo.attributes.normal.array, col = new Float32Array(N * N * 3);
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const k = j * N + i, x = pos[k * 3], h = pos[k * 3 + 1], z = pos[k * 3 + 2], ny = nor[k * 3 + 1];
     const n1 = vnoise(x * 0.018, z * 0.018, 11), n2 = vnoise(x * 0.09, z * 0.09, 12);
     tmp.copy(grassA).lerp(grassB, clamp(n1 * 1.2 - 0.1 + (n2 - 0.5) * 0.3, 0, 1));
+    tmp.lerp(lawn, (1 - smoothstep(0.24, 0.9, M[k])) * 0.4);
+    if (h > 1) tmp.lerp(dirt, TR[k] * (0.75 + n2 * 0.25));
     if (h < 3) tmp.lerpColors(sand, tmp, smoothstep(1.2, 3, h));
     if (h < 0.6) tmp.lerp(wet, smoothstep(0.6, -1.5, h));
     tmp2.copy(rock).lerp(rockD, n2);
@@ -73,9 +98,10 @@ export function createWorld(scene) {
   scene.add(terrain);
 
   // height texture for GPU grass/fireflies (same grid as the mesh)
-  const half = new Uint16Array(N * N);
-  for (let i = 0; i < N * N; i++) half[i] = THREE.DataUtils.toHalfFloat(H[i]);
-  const heightTex = new THREE.DataTexture(half, N, N, THREE.RedFormat, THREE.HalfFloatType);
+  // R = height, G = grass mask
+  const half = new Uint16Array(N * N * 2);
+  for (let i = 0; i < N * N; i++) { half[i * 2] = THREE.DataUtils.toHalfFloat(H[i]); half[i * 2 + 1] = THREE.DataUtils.toHalfFloat(M[i]); }
+  const heightTex = new THREE.DataTexture(half, N, N, THREE.RGFormat, THREE.HalfFloatType);
   heightTex.magFilter = heightTex.minFilter = THREE.LinearFilter;
   heightTex.needsUpdate = true;
 
@@ -165,14 +191,14 @@ export function createWorld(scene) {
     geo.computeVertexNormals();
     return geo;
   }
-  const trunkMat = patch(new THREE.MeshStandardMaterial({ color: '#5b4232', roughness: 1, flatShading: true }), 'plain');
-  const leafMat = patch(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, flatShading: true }), 'leaves');
+  const trunkMat = patch(new THREE.MeshStandardMaterial({ color: '#8a5d40', roughness: 0.8 }), 'plain');
+  const leafMat = patch(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.62 }), 'leaves');
   function forest(count, trunkGeo, leafGeo, colA, colB, colC, accept) {
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count), leaves = new THREE.InstancedMesh(leafGeo, leafMat, count);
     let n = 0;
     for (let tries = 0; tries < count * 30 && n < count; tries++) {
       const x = (R() - 0.5) * (SIZE - 80), z = (R() - 0.5) * (SIZE - 80), h = getHeight(x, z);
-      if (Math.hypot(x, z) < 34 || !accept(x, z, h)) continue;
+      if (Math.hypot(x, z) < 34 || !accept(x, z, h) || trailDist(x, z) < 6.5) continue;
       getSlope(x, z, sl); if (sl.length() > 0.55) continue;
       const s = 0.75 + R() * 1.15;
       ps.set(x, h - 0.35, z); qt.setFromEuler(eu.set((R() - 0.5) * 0.1, R() * 6.28, (R() - 0.5) * 0.1)); sc.set(s, s * (0.85 + R() * 0.4), s);
@@ -188,25 +214,25 @@ export function createWorld(scene) {
   }
   const fmask = (x, z) => fbm(x * 0.0055, z * 0.0055, 3, 21);
   // pines: five drooping skirts
-  const pineLeaf = mergeGeometries([[2.75, 3.4, 2.0], [2.35, 3.3, 3.7], [1.9, 3.1, 5.4], [1.4, 2.9, 7.0], [0.85, 2.6, 8.5]]
-    .map(([r, h, y], i) => organic(new THREE.ConeGeometry(r, h, 9, 2).rotateY(i * 0.7).translate(0, y + h / 2, 0), 0.24)));
-  forest(2400, new THREE.CylinderGeometry(0.2, 0.45, 4.2, 7).translate(0, 2.1, 0), pineLeaf,
-    C('#2c6b3c'), C('#4f8a3c'), C('#8fa04a'), (x, z, h) => h > 3.5 && h < 140 && fmask(x, z) > 0.5 + R() * 0.08);
+  const pineLeaf = organic(new THREE.LatheGeometry([[0.3, 1.7], [2.5, 2.0], [2.75, 2.6], [2.1, 3.6], [1.35, 4.2], [2.05, 4.5], [2.2, 5.0], [1.6, 6.0],
+    [1.0, 6.5], [1.55, 6.8], [1.65, 7.2], [1.1, 8.2], [0.6, 8.8], [0.95, 9.05], [1.0, 9.4], [0.5, 10.4], [0.001, 11.0]].map((p) => new THREE.Vector2(p[0], p[1])), 16), 0.12);
+  forest(2400, new THREE.CylinderGeometry(0.22, 0.5, 4.2, 10).translate(0, 2.1, 0), pineLeaf,
+    C('#3f9272'), C('#62ad73'), C('#a9c95e'), (x, z, h) => h > 3.5 && h < 140 && fmask(x, z) > 0.5 + R() * 0.08);
   // broadleaf trees in the lowlands
   const oakLeaf = mergeGeometries([[2.5, 0, 6.2, 0], [1.9, 1.7, 5.3, 0.6], [2.0, -1.5, 5.6, -0.8], [1.7, 0.3, 7.9, -0.3], [1.5, -0.4, 5.0, 1.6]]
-    .map(([r, x, y, z]) => organic(new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), 0.3)));
-  forest(900, organic(new THREE.CylinderGeometry(0.3, 0.6, 5.2, 7).translate(0, 2.6, 0), 0.25), oakLeaf,
-    C('#4f9440'), C('#86b045'), C('#d9a441'), (x, z, h) => h > 3.2 && h < 55 && fmask(x + 300, z - 200) > 0.52 + R() * 0.1);
+    .map(([r, x, y, z]) => organic(new THREE.SphereGeometry(r, 12, 9).translate(x, y, z), 0.22)));
+  forest(900, organic(new THREE.CylinderGeometry(0.32, 0.65, 5.2, 10).translate(0, 2.6, 0), 0.2), oakLeaf,
+    C('#6fb854'), C('#a6d060'), C('#f3a3b7'), (x, z, h) => h > 3.2 && h < 55 && fmask(x + 300, z - 200) > 0.52 + R() * 0.1);
   // bushes
-  const BUSH = 2200, bushes = new THREE.InstancedMesh(organic(new THREE.IcosahedronGeometry(1, 1), 0.45), leafMat, BUSH);
+  const BUSH = 2200, bushes = new THREE.InstancedMesh(organic(new THREE.SphereGeometry(1, 10, 7), 0.35), leafMat, BUSH);
   let nb = 0;
   for (let i = 0; nb < BUSH && i < BUSH * 20; i++) {
     const x = (R() - 0.5) * (SIZE - 80), z = (R() - 0.5) * (SIZE - 80), h = getHeight(x, z);
-    if (h < 3 || h > 120 || Math.hypot(x, z) < 12 || fmask(x, z) < 0.43) continue;
+    if (h < 3 || h > 120 || Math.hypot(x, z) < 12 || fmask(x, z) < 0.43 || trailDist(x, z) < 4.5) continue;
     const s = 0.5 + R() * 1.1;
     ps.set(x, h + s * 0.25, z); qt.setFromEuler(eu.set(0, R() * 6.28, 0)); sc.set(s * (1 + R() * 0.5), s * 0.7, s * (1 + R() * 0.5));
     m4.compose(ps, qt, sc); bushes.setMatrixAt(nb, m4);
-    bushes.setColorAt(nb, tmp.set('#3f7d36').lerp(tmp2.set('#7ea63f'), R()));
+    bushes.setColorAt(nb, tmp.set('#7fbf5a').lerp(tmp2.set('#b7dc6a'), R()).multiplyScalar(1.7));
     nb++;
   }
   bushes.count = nb; bushes.castShadow = bushes.receiveShadow = true;
@@ -214,7 +240,7 @@ export function createWorld(scene) {
 
   // ---------- rocks ----------
   const ROCKS = 900;
-  const rocks = new THREE.InstancedMesh(organic(new THREE.IcosahedronGeometry(1, 1), 0.5), patch(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true }), 'stone'), ROCKS);
+  const rocks = new THREE.InstancedMesh(organic(new THREE.SphereGeometry(1, 10, 7), 0.4), patch(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 }), 'stone'), ROCKS);
   for (let i = 0; i < ROCKS; i++) {
     const x = (R() - 0.5) * (SIZE - 60), z = (R() - 0.5) * (SIZE - 60), h = getHeight(x, z);
     const big = R() > 0.9, s = big ? 2.5 + R() * 4 : 0.35 + R() * 1.3;
@@ -226,12 +252,62 @@ export function createWorld(scene) {
   rocks.castShadow = rocks.receiveShadow = true;
   scene.add(rocks);
 
+  // ---------- trail lanterns ----------
+  const lampGeo = mergeGeometries([
+    new RoundedBoxGeometry(1.0, 0.4, 1.0, 2, 0.1).translate(0, 0.2, 0),
+    new RoundedBoxGeometry(0.46, 1.4, 0.46, 2, 0.08).translate(0, 1.1, 0),
+    new RoundedBoxGeometry(0.9, 0.16, 0.9, 2, 0.06).translate(0, 1.86, 0),
+    ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => new RoundedBoxGeometry(0.14, 0.62, 0.14, 1, 0.04).translate(a * 0.33, 2.2, b * 0.33)),
+    new RoundedBoxGeometry(1.2, 0.24, 1.2, 2, 0.1).translate(0, 2.62, 0),
+    new RoundedBoxGeometry(0.6, 0.22, 0.6, 2, 0.1).translate(0, 2.84, 0)
+  ]);
+  const lampSpots = [];
+  for (let i = 0, acc = 14; i < TRAIL.length - 1; i++) {
+    const ax = TRAIL[i][0], az = TRAIL[i][1], dx = TRAIL[i + 1][0] - ax, dz = TRAIL[i + 1][1] - az, len = Math.hypot(dx, dz);
+    for (; acc < len; acc += 34) {
+      const side = lampSpots.length % 2 ? 1 : -1, t = acc / len;
+      const x = ax + dx * t + (-dz / len) * 4.6 * side, z = az + dz * t + (dx / len) * 4.6 * side;
+      if (getHeight(x, z) > 1.5) lampSpots.push([x, z, Math.atan2(dx, dz)]);
+    }
+    acc -= len;
+  }
+  const lampMat = patch(new THREE.MeshStandardMaterial({ color: '#cfc4b0', roughness: 0.85 }), 'stone');
+  const glowMat = new THREE.MeshStandardMaterial({ color: '#ffd9a0', emissive: '#ffa63d', emissiveIntensity: 1 });
+  const lamps = new THREE.InstancedMesh(lampGeo, lampMat, lampSpots.length), glows = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), glowMat, lampSpots.length);
+  lampSpots.forEach(([x, z, ry], i) => {
+    const h = getHeight(x, z) - 0.12;
+    ps.set(x, h, z); qt.setFromEuler(eu.set(0, ry, 0)); sc.set(1, 1, 1); m4.compose(ps, qt, sc); lamps.setMatrixAt(i, m4);
+    ps.set(x, h + 2.2, z); m4.compose(ps, qt, sc); glows.setMatrixAt(i, m4);
+    addCollider(x, z, 0.6);
+  });
+  lamps.castShadow = lamps.receiveShadow = true;
+  scene.add(lamps, glows);
+
+  // ---------- mushrooms ----------
+  const MUSH = 700, stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.1, 0.34, 8).translate(0, 0.17, 0), new THREE.MeshStandardMaterial({ color: '#f3ead6', roughness: 0.7 }), MUSH);
+  const caps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.24, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 0.75, 1).translate(0, 0.3, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.45 }), MUSH);
+  const capCols = [C('#e8503f'), C('#f0a23c'), C('#b98be8'), C('#f3ead6')];
+  let nm = 0;
+  for (let tries = 0; tries < 5000 && nm < MUSH; tries++) {
+    const cx = (R() - 0.5) * (SIZE - 200), cz = (R() - 0.5) * (SIZE - 200), ch = getHeight(cx, cz);
+    if (ch < 3 || ch > 100 || fmask(cx, cz) < 0.47) continue;
+    const cc = capCols[Math.floor(R() * capCols.length)], cnt = 3 + Math.floor(R() * 6);
+    for (let k = 0; k < cnt && nm < MUSH; k++) {
+      const x = cx + (R() - 0.5) * 3.2, z = cz + (R() - 0.5) * 3.2, s = 0.7 + R() * 1.5;
+      ps.set(x, getHeight(x, z) - 0.03, z); qt.setFromEuler(eu.set((R() - 0.5) * 0.3, R() * 6.28, (R() - 0.5) * 0.3)); sc.set(s, s, s);
+      m4.compose(ps, qt, sc); stems.setMatrixAt(nm, m4); caps.setMatrixAt(nm, m4); caps.setColorAt(nm, cc);
+      nm++;
+    }
+  }
+  stems.count = caps.count = nm; caps.castShadow = true;
+  scene.add(stems, caps);
+
   // ---------- ruins ----------
-  const stone = patch(new THREE.MeshStandardMaterial({ color: '#b3ab98', roughness: 1, flatShading: true }), 'stone');
-  const stoneD = patch(new THREE.MeshStandardMaterial({ color: '#8e8778', roughness: 1, flatShading: true }), 'stone');
+  const stone = patch(new THREE.MeshStandardMaterial({ color: '#d2c7b2', roughness: 0.85 }), 'stone');
+  const stoneD = patch(new THREE.MeshStandardMaterial({ color: '#ab9f8c', roughness: 0.85 }), 'stone');
   const ruins = new THREE.Group(); scene.add(ruins);
   function block(w, h, d, x, y, z, ry, mat) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || stone);
+    const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, Math.min(0.42, Math.min(w, h, d) * 0.14)), mat || stone);
     m.position.set(x, y, z); m.rotation.y = ry || 0; m.castShadow = m.receiveShadow = true; ruins.add(m); return m;
   }
   function pillar(x, z, w, h, ry) {
@@ -241,6 +317,7 @@ export function createWorld(scene) {
     addCollider(x, z, w * 0.8);
     return base + 1.6 + h;
   }
+  const emberSpots = [];
   function ring(cx, cz, rad, n, hBase) {
     let prev = null;
     for (let i = 0; i < n; i++) {
@@ -258,12 +335,14 @@ export function createWorld(scene) {
     block(7, 1.2, 7, cx, getHeight(cx, cz) + 0.2, cz, 0.4, stoneD);     // altar
     block(3, 1.6, 3, cx, getHeight(cx, cz) + 1.4, cz, 0.4);
     addCollider(cx, cz, 2.4);
+    emberSpots.push([cx, getHeight(cx, cz) + 3.6, cz]);
   }
   function gate(cx, cz, ry) {
     const dx = Math.cos(ry) * 7, dz = -Math.sin(ry) * 7;
     const t1 = pillar(cx + dx, cz + dz, 4, 20, ry), t2 = pillar(cx - dx, cz - dz, 4, 20, ry);
     block(22, 3.5, 5, cx, Math.max(t1, t2) + 1.75, cz, ry);
     block(26, 1.5, 6.5, cx, Math.max(t1, t2) + 4.2, cz, ry, stoneD);
+    emberSpots.push([cx, getHeight(cx, cz) + 2.0, cz]);
   }
   ring(0, -46, 17, 12, 10);
   gate(0, -110, 0);
@@ -277,12 +356,14 @@ export function createWorld(scene) {
     sites++;
   }
 
+  [1, 7, 8, 9, 10].forEach((i) => { const x = TRAIL[i][0], z = TRAIL[i][1]; if (getHeight(x, z) > 1) emberSpots.push([x, getHeight(x, z) + 1.7, z]); });
+
   // the Spire: a colossal landmark with a light on top, visible from the spawn
   const spire = new THREE.Group(), SX = 0, SZ = -560, sBase = getHeight(SX, SZ) - 6;
   let y = sBase, rad = 26;
   for (let i = 0; i < 9; i++) {
     const h = 30 - i * 1.5, r2 = rad * 0.84;
-    const seg = new THREE.Mesh(new THREE.CylinderGeometry(r2, rad, h, 8), i % 2 ? stoneD : stone);
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(r2, rad, h, 20), i % 2 ? stoneD : stone);
     seg.position.set(SX, y + h / 2, SZ); seg.rotation.y = i * 0.35; seg.castShadow = seg.receiveShadow = true; spire.add(seg);
     y += h; rad = r2;
   }
@@ -293,6 +374,11 @@ export function createWorld(scene) {
 
   return {
     getHeight, getSlope, resolve, heightTex, waterUniforms, N, SIZE, WATER,
-    update(t) { beacon.rotation.y = t * 0.4; beacon.position.y = y + 14 + Math.sin(t * 0.8) * 1.5; }
+    trailDist, emberSpots,
+    wake() { beacon.material.emissiveIntensity = 16; beacon.scale.setScalar(1.6); },
+    update(t, night) {
+      beacon.rotation.y = t * 0.4; beacon.position.y = y + 14 + Math.sin(t * 0.8) * 1.5;
+      glowMat.emissiveIntensity = 0.5 + night * 5.5 + Math.sin(t * 7) * 0.15 * night;
+    }
   };
 }

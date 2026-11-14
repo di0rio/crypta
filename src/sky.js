@@ -70,12 +70,12 @@ void main() {
 
 const C = (h) => new THREE.Color(h);
 const K = {
-  dayTop: C('#1f6fd0'), dayHor: C('#b4d8f0'), nightTop: C('#040917'), nightHor: C('#18244a'),
+  dayTop: C('#3f8fe0'), dayHor: C('#d2e8f2'), nightTop: C('#040917'), nightHor: C('#18244a'),
   duskTop: C('#3a3c8a'), duskHor: C('#ff7a3d'),
-  sunLow: C('#ff6a24'), sunHigh: C('#fff1d6'), moon: C('#86a8ff'),
+  sunLow: C('#ff6a24'), sunHigh: C('#fff0cf'), moon: C('#86a8ff'),
   cloudDay: C('#ffffff'), cloudDusk: C('#ff9d78'), cloudNight: C('#232f55'),
   darkDay: C('#7f8ea6'), darkDusk: C('#4a3a66'), darkNight: C('#0a1024'),
-  ground: C('#514a38')
+  ground: C('#93825f')
 };
 
 export class Sky {
@@ -92,8 +92,8 @@ export class Sky {
     this.sun = new THREE.DirectionalLight(0xffffff, 2.5);
     this.sun.castShadow = true;
     const s = this.sun.shadow;
-    s.mapSize.set(4096, 4096); s.camera.near = 1; s.camera.far = 420;
-    s.camera.left = s.camera.bottom = -62; s.camera.right = s.camera.top = 62;
+    s.mapSize.set(2048, 2048); s.camera.near = 1; s.camera.far = 420;
+    s.camera.left = s.camera.bottom = -44; s.camera.right = s.camera.top = 44;
     s.bias = -0.0004; s.normalBias = 0.35; s.radius = 2.5;
     scene.add(this.sun, this.sun.target);
 
@@ -137,7 +137,7 @@ export class Sky {
     u.uNight.value = night; u.uTime.value = elapsed;
 
     // one shadow-casting light: the sun by day, the moon by night
-    const sunI = smoothstep(-0.04, 0.16, sy) * 3.0, moonI = smoothstep(-0.02, -0.2, sy) * 1.1;
+    const sunI = smoothstep(-0.04, 0.16, sy) * 2.7, moonI = smoothstep(-0.02, -0.2, sy) * 1.8;
     if (sunI >= moonI) { this.lightDir.copy(this.sunDir); this.sun.color.copy(u.uSunCol.value); this.sun.intensity = sunI; }
     else { this.lightDir.copy(this.sunDir).negate(); this.sun.color.copy(K.moon); this.sun.intensity = moonI; }
     if (this.lightDir.y < 0.1) { this.lightDir.y = 0.1; this.lightDir.normalize(); }
@@ -146,10 +146,10 @@ export class Sky {
     this.lightCol.copy(this.sun.color).multiplyScalar(this.sun.intensity);
 
     this.hemi.color.copy(this.top).lerp(this.hor, 0.5).lerp(K.moon, night * 0.5);
-    this.hemi.intensity = lerp(0.6, 1.35, dayF) + tw * 0.25;
+    this.hemi.intensity = lerp(1.05, 1.28, dayF) + tw * 0.25;
     this.ambient.copy(this.hemi.color).multiplyScalar(Math.min(this.hemi.intensity, 1.0) * 0.6);
     this.fog.color.copy(this.hor).multiplyScalar(lerp(0.75, 0.95, dayF));
-    this.fog.density = lerp(0.0017, 0.00105, dayF) + tw * 0.0006;
+    this.fog.density = lerp(0.0017, 0.0009, dayF) + tw * 0.0006;
 
     this.dome.position.copy(camPos);
   }

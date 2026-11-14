@@ -40,6 +40,27 @@ O protótipo 2D anterior (CRYPTA, pixel art co-op) foi arquivado: está no prime
 - **Imagem final**: contraste, saturação, vinheta e grão; pólen flutuando de dia.
 - **Personagem**: remodelado com formas torneadas — capa curta com barra ondulada, rosto, cabelo com rabo que balança, botas, braçadeiras, cinto, espada com bainha.
 
+### Direção de arte: diorama — feito
+
+Linguagem visual de maquete em miniatura: 3D estilizado, formas arredondadas, luz quente, foco raso. Referência só de linguagem; arte própria.
+
+- **Câmera de maquete**: alta, teleobjetiva (FOV 30), com desfoque tilt-shift em cima e embaixo. Mouse e roda continuam orbitando e dando zoom.
+- **Formas**: fim do facetado. Pinheiros torneados em camadas, copas e pedras lisas, blocos de ruína com quinas arredondadas.
+- **Paleta e luz**: verdes mais suaves, pedra clara, sol quente, sombra menos preta, noite legível.
+- **Chão com desenho**: trilha de terra do início até a Torre; gramado curto em tufos e campos de capim alto; flores em grupos da mesma cor; cogumelos sob as árvores.
+- **Lanternas de pedra** ao longo da trilha, acesas à noite.
+- **Personagem** com proporção de boneco (cabeça maior, corpo 45% maior) pra ler de longe.
+- **Custo menor**: 190 mil lâminas (antes 300 mil), sombra 2048 em área menor.
+
+### Primeiro objetivo jogável — feito
+
+- **Brasas**: 16 luzes espalhadas por ruínas e pela trilha. Contador na tela.
+- Cada brasa aumenta o fôlego máximo. Com todas, a Torre desperta.
+
+### Verificado por simulação
+
+Andar 6,2 m/s, correr 10,5 m/s com gasto de fôlego, pulo de 1,75 m, rolamento de 6,7 m, nado, colisão com altar, limite do mundo, encosta íngreme empurra de volta, coleta de brasa. Sem valores inválidos.
+
 ## Próximas etapas
 
 1. **Polir o personagem** — modelo com mais forma (mãos, rosto, roupa com dobra), pés que acompanham o chão (IK), transições de animação, poeira e pegadas.

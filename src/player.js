@@ -59,7 +59,8 @@ function buildCharacter() {
   body.add(poncho);
 
   // head
-  const head = new THREE.Group(); head.position.set(0, 0.83, 0); body.add(head);
+  const head = new THREE.Group(); head.position.set(0, 0.87, 0); head.scale.setScalar(1.3); body.add(head);
+  root.scale.setScalar(1.45);
   head.add(ball(0.165, skin, 0, 0, 0, 1, 1.06, 1.03));
   [-1, 1].forEach((sd) => {
     head.add(ball(0.036, skin, sd * 0.162, -0.012, 0, 0.5, 1, 0.8));
@@ -138,9 +139,9 @@ export class Player {
     this.vel = new THREE.Vector3();
     this.heading = Math.PI; this.turn = 0;
     this.grounded = true; this.swim = false;
-    this.stamina = 100; this.staminaWait = 0; this.exhausted = false;
+    this.stamina = 100; this.maxStamina = 100; this.staminaWait = 0; this.exhausted = false;
     this.roll = 0; this.phase = 0; this.airT = 0; this.land = 0;
-    this.yaw = 0; this.pitch = 0.2; this.dist = 5.6; this.fov = 58;
+    this.yaw = 0; this.pitch = 0.52; this.dist = 18; this.fov = 30;
     this.camTarget = this.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
     this.keys = {}; this.active = false;
     this._sl = new THREE.Vector2(); this._v = new THREE.Vector3();
@@ -155,16 +156,16 @@ export class Player {
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
       if (!this.active || (document.pointerLockElement !== dom && !drag)) return;
-      this.yaw -= e.movementX * 0.0026; this.pitch = clamp(this.pitch + e.movementY * 0.0022, -0.45, 1.35);
+      this.yaw -= e.movementX * 0.0026; this.pitch = clamp(this.pitch + e.movementY * 0.0022, 0.22, 1.4);
     });
-    dom.addEventListener('wheel', (e) => { this.dist = clamp(this.dist + Math.sign(e.deltaY) * 0.8, 3, 16); }, { passive: true });
+    dom.addEventListener('wheel', (e) => { this.dist = clamp(this.dist + Math.sign(e.deltaY) * 1.2, 7, 34); }, { passive: true });
   }
 
   update(dt, elapsed) {
     const k = this.keys, w = this.world, p = this.pos, v = this.vel;
     // arrow keys also turn the camera (keyboard-only play)
     const ax = (k.ArrowLeft ? 1 : 0) - (k.ArrowRight ? 1 : 0), ay = (k.ArrowDown ? 1 : 0) - (k.ArrowUp ? 1 : 0);
-    this.yaw += ax * dt * 1.8; this.pitch = clamp(this.pitch + ay * dt * 1.1, -0.45, 1.35);
+    this.yaw += ax * dt * 1.8; this.pitch = clamp(this.pitch + ay * dt * 1.1, 0.22, 1.4);
 
     let ix = 0, iz = 0;
     if (this.active) { ix = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0); iz = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0); }
@@ -178,7 +179,7 @@ export class Player {
     // stamina
     const wantSprint = this.active && (k.ShiftLeft || k.ShiftRight) && il > 0 && !this.exhausted && !this.swim;
     if (wantSprint && this.grounded) { this.stamina -= 13 * dt; this.staminaWait = 0.9; }
-    else if (this.staminaWait > 0) this.staminaWait -= dt; else this.stamina = Math.min(100, this.stamina + 26 * dt);
+    else if (this.staminaWait > 0) this.staminaWait -= dt; else this.stamina = Math.min(this.maxStamina, this.stamina + 26 * dt);
     if (this.stamina <= 0) { this.stamina = 0; this.exhausted = true; }
     if (this.exhausted && this.stamina > 30) this.exhausted = false;
 
@@ -209,7 +210,7 @@ export class Player {
     v.y -= 30 * dt;
     p.x += v.x * dt; p.z += v.z * dt; p.y += v.y * dt;
     const lim = w.SIZE / 2 - 12; p.x = clamp(p.x, -lim, lim); p.z = clamp(p.z, -lim, lim);
-    w.resolve(p, 0.4);
+    w.resolve(p, 0.55);
 
     const g2 = w.getHeight(p.x, p.z), floorY = Math.max(g2, w.WATER - 1.15);
     const wasAir = !this.grounded;
@@ -298,7 +299,7 @@ export class Player {
 
   updateCamera(dt, sprint) {
     const cam = this.camera, w = this.world;
-    this._v.set(this.pos.x, this.pos.y + 1.55, this.pos.z);
+    this._v.set(this.pos.x, this.pos.y + 1.5, this.pos.z);
     const kxz = 1 - Math.exp(-9 * dt), ky = 1 - Math.exp(-5 * dt);
     this.camTarget.x += (this._v.x - this.camTarget.x) * kxz; this.camTarget.z += (this._v.z - this.camTarget.z) * kxz;
     this.camTarget.y += (this._v.y - this.camTarget.y) * ky;
@@ -307,7 +308,7 @@ export class Player {
     const minY = Math.max(w.getHeight(cam.position.x, cam.position.z), w.WATER) + 0.5;
     if (cam.position.y < minY) cam.position.y = minY;
     cam.lookAt(this.camTarget);
-    this.fov += ((sprint ? 66 : 58) - this.fov) * (1 - Math.exp(-4 * dt));
+    this.fov += ((sprint ? 33 : 30) - this.fov) * (1 - Math.exp(-4 * dt));
     if (Math.abs(cam.fov - this.fov) > 0.01) { cam.fov = this.fov; cam.updateProjectionMatrix(); }
   }
 }

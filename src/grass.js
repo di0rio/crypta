@@ -13,6 +13,10 @@ float hAt(vec2 p) {
   vec2 uv = ((p + uSize * 0.5) / (uSize / (uN - 1.0)) + 0.5) / uN;
   return texture2D(uHeight, uv).r;
 }
+float mAt(vec2 p) {
+  vec2 uv = ((p + uSize * 0.5) / (uSize / (uN - 1.0)) + 0.5) / uN;
+  return texture2D(uHeight, uv).g;
+}
 vec2 wrap(vec2 base) { return base + uPatch * floor((uPlayer.xz - base) / uPatch + 0.5); }
 `;
 
@@ -34,8 +38,11 @@ void main() {
   s *= smoothstep(0.7, 2.6, distance(vec3(wp.x, h, wp.y), cameraPosition));   // keep blades out of the lens
   float big = wfbm(wp * 0.03);                       // meadow-scale variation: tall lush vs short dry
   float clump = wnoise(wp * 0.45);
-  float flower = step(0.9945, aOffset.w) * step(0.4, big);
-  float bh = (0.42 + aOffset.z * 0.62) * s * (0.7 + big * 0.75) * (0.75 + clump * 0.45) ;
+  float m = mAt(wp);                                  // 0 trail, ~0.25 lawn, 1 meadow
+  s *= smoothstep(0.08, 0.2, m) * smoothstep(0.2, 0.5, wnoise(wp * 0.8 + 11.0) + m * 0.95);   // tufts on the lawn, full cover in meadows
+  float patchF = smoothstep(0.6, 0.68, wnoise(wp * 0.075 + 5.0));   // flowers grow in groups
+  float flower = step(0.965, aOffset.w) * patchF;
+  float bh = (0.3 + aOffset.z * 0.42) * s * (0.42 + 0.58 * m) * (0.75 + big * 0.6) * (0.75 + clump * 0.45) * (1.0 + flower * 0.25);
   float ang = aOffset.w * 6.2831 * 37.0;
   float t = position.y;
   float wide = 1.0 + flower * 2.4 * step(0.6, t) * step(t, 0.9);
@@ -57,7 +64,7 @@ void main() {
   vSheen = gust * t;
   vec2 toBlade = normalize(pos.xz - cameraPosition.xz + 0.0001);
   vBack = pow(max(dot(toBlade, normalize(uSunDir.xz + 0.0001)), 0.0), 3.0) * t * (1.0 - smoothstep(0.1, 0.75, uSunDir.y));
-  float fc = fract(aOffset.z * 7.3);
+  float fc = fract(wnoise(wp * 0.021 + 2.0) * 3.0 + aOffset.z * 0.12);     // one colour family per group
   vFlower = flower * (fc < 0.4 ? vec3(1.0, 0.96, 0.85) : fc < 0.7 ? vec3(1.0, 0.78, 0.2) : fc < 0.88 ? vec3(0.72, 0.5, 1.0) : vec3(1.0, 0.45, 0.5));
 
   vec4 mvPosition = viewMatrix * vec4(pos, 1.0);
@@ -120,14 +127,14 @@ function offsets(count, patch, seed) {
 }
 
 export function createGrass(scene, world, sky) {
-  const PATCH = 110, COUNT = 300000;
+  const PATCH = 84, COUNT = 190000;
   const common = {
     uHeight: { value: world.heightTex }, uPlayer: { value: new THREE.Vector3() }, uTime: shared.uTime,
     uSize: { value: world.SIZE }, uN: { value: world.N }
   };
 
   // blade: tapered strip, x = half width, y = 0..1 along the blade
-  const w = 0.062;
+  const w = 0.07;
   const blade = new THREE.InstancedBufferGeometry();
   blade.setAttribute('position', new THREE.Float32BufferAttribute([-w, 0, 0, w, 0, 0, -w * 0.8, 0.45, 0, w * 0.8, 0.45, 0, -w * 0.45, 0.8, 0, w * 0.45, 0.8, 0, 0, 1, 0], 3));
   blade.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6]);
@@ -135,7 +142,7 @@ export function createGrass(scene, world, sky) {
   blade.instanceCount = COUNT;
 
   const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-    uBase: { value: new THREE.Color('#24531f') }, uTip: { value: new THREE.Color('#79c244') }, uDry: { value: new THREE.Color('#cfc45c') },
+    uBase: { value: new THREE.Color('#3d8539') }, uTip: { value: new THREE.Color('#9ed162') }, uDry: { value: new THREE.Color('#dccf72') },
     uAmb: { value: new THREE.Color(1, 1, 1) }, uSun: { value: new THREE.Color(1, 1, 1) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }
   }]);
   Object.assign(uniforms, common, { uPatch: { value: PATCH }, uCloud: shared.uCloud });

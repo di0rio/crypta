@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ERMO</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=3">
 <script type="importmap">
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -17,6 +17,8 @@
 
 <div id="hud" class="hidden">
   <div id="clock">08:00</div>
+  <div id="embers">BRASAS 0 / 0</div>
+  <div id="toast"></div>
   <svg id="stamina" viewBox="0 0 60 60" aria-hidden="true">
     <circle class="bg" cx="30" cy="30" r="24"/>
     <circle class="fg" id="stamina-arc" cx="30" cy="30" r="24"/>
@@ -31,6 +33,6 @@
   <p id="loading">gerando o mundo…</p>
 </div>
 
-<script type="module" src="src/main.js"></script>
+<script type="module" src="src/main.js?v=3"></script>
 </body>
 </html>

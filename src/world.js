@@ -159,25 +159,27 @@ export function createWorld(scene) {
   scene.add(water);
 
   // ---------- colliders (trees, pillars): circles in a hash grid ----------
-  // Each entry is 7 floats: [type, x, z, a, b, c, d]
+  // Each entry is 9 floats: [type, x, z, a, b, c, d, base, top]
   //   type 0 = circle (a = radius, b = kind: 0 solid, 1 tree, 2 bush - soft, reports but does not push)
   //   type 1 = oriented box (a = half width, b = half depth, c = cos, d = sin of its Y rotation)
-  const grid = new Map(), GC = 16;
-  function put(x, z, t, a, b, c, d) {
+  //   base/top = vertical extent: you can stand on a box, walk under one, or climb its side
+  const grid = new Map(), GC = 16, E = 9, TALL = 2.4, STEP = 0.6;
+  function put(x, z, t, a, b, c, d, base, top) {
     const key = Math.floor(x / GC) + ',' + Math.floor(z / GC);
     let arr = grid.get(key); if (!arr) grid.set(key, arr = []);
-    arr.push(t, x, z, a, b, c, d);
+    arr.push(t, x, z, a, b, c, d, base === undefined ? -1e9 : base, top === undefined ? 1e9 : top);
   }
   const addCollider = (x, z, r, kind) => put(x, z, 0, r, kind || 0, 0, 0);
-  const addBox = (x, z, hw, hd, ry) => put(x, z, 1, hw, hd, Math.cos(ry), Math.sin(ry));
-  // pushes p out of every solid; returns the deepest overlap found (before pushing). `hit` reports trees and bushes.
+  const addBox = (x, z, hw, hd, ry, base, top) => put(x, z, 1, hw, hd, Math.cos(ry), Math.sin(ry), base, top);
+  // pushes p out of every solid at its height; returns the deepest overlap found (before pushing).
+  // `hit` reports trees, bushes and climbable walls (with the wall's top and outward normal).
   function resolve(p, radius, hit, dry) {
     const cx = Math.floor(p.x / GC), cz = Math.floor(p.z / GC);
     let deep = 0;
-    if (hit) hit.tree = hit.bush = false;
+    if (hit) { hit.tree = hit.bush = hit.wall = false; hit.wallTop = -1e9; }
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
       const a = grid.get((cx + i) + ',' + (cz + j)); if (!a) continue;
-      for (let k = 0; k < a.length; k += 7) {
+      for (let k = 0; k < a.length; k += E) {
         const dx = p.x - a[k + 1], dz = p.z - a[k + 2];
         if (a[k] === 0) {
           const rr = a[k + 3] + radius, d2 = dx * dx + dz * dz;
@@ -188,30 +190,49 @@ export function createWorld(scene) {
           if (hit && a[k + 4] === 1) { hit.tree = true; hit.x = a[k + 1]; hit.z = a[k + 2]; }
           if (!dry) { const push = (rr - d) / d; p.x += (d2 > 1e-8 ? dx : 1e-4) * push; p.z += dz * push; }
         } else {
+          if (p.y >= a[k + 8] - 0.3 || p.y + TALL < a[k + 7]) continue;        // standing on it, or walking under it
           const c = a[k + 5], sn = a[k + 6], hw = a[k + 3] + radius, hd = a[k + 4] + radius;
           let lx = dx * c - dz * sn, lz = dx * sn + dz * c;
           const px = hw - Math.abs(lx), pz = hd - Math.abs(lz);
           if (px <= 0 || pz <= 0) continue;
+          const ox = p.x, oz = p.z;
           if (px < radius && pz < radius) {                 // rounded corner: slide around it instead of snagging
             const qx = (lx < 0 ? -1 : 1) * (hw - radius), qz = (lz < 0 ? -1 : 1) * (hd - radius), ex = lx - qx, ez = lz - qz, ed = Math.hypot(ex, ez) || 1e-4;
             if (ed >= radius) continue;
             if (radius - ed > deep) deep = radius - ed;
             if (dry) continue;
             lx = qx + ex / ed * radius; lz = qz + ez / ed * radius;
-            p.x = a[k + 1] + lx * c + lz * sn; p.z = a[k + 2] - lx * sn + lz * c;
-            continue;
+          } else {
+            if (Math.min(px, pz) > deep) deep = Math.min(px, pz);
+            if (dry) continue;
+            if (px < pz) lx = (lx < 0 ? -hw : hw); else lz = (lz < 0 ? -hd : hd);
           }
-          if (Math.min(px, pz) > deep) deep = Math.min(px, pz);
-          if (dry) continue;
-          if (px < pz) lx = (lx < 0 ? -hw : hw); else lz = (lz < 0 ? -hd : hd);
           p.x = a[k + 1] + lx * c + lz * sn; p.z = a[k + 2] - lx * sn + lz * c;
+          if (hit && a[k + 8] > hit.wallTop) {
+            const nx = p.x - ox, nz = p.z - oz, nl = Math.hypot(nx, nz);
+            if (nl > 1e-5) { hit.wall = true; hit.wallTop = a[k + 8]; hit.nx = nx / nl; hit.nz = nz / nl; }
+          }
         }
       }
     }
     return deep;
   }
-  const probe = { x: 0, z: 0 };
-  const penetration = (x, z, radius) => { probe.x = x; probe.z = z; return resolve(probe, radius, null, true); };
+  // ground under a point for something whose feet are at y: terrain, or the top of a box it can step onto
+  function floorAt(x, z, y) {
+    let f = getHeight(x, z);
+    const cx = Math.floor(x / GC), cz = Math.floor(z / GC);
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const a = grid.get((cx + i) + ',' + (cz + j)); if (!a) continue;
+      for (let k = 0; k < a.length; k += E) {
+        if (a[k] !== 1 || a[k + 8] > y + STEP || a[k + 8] <= f) continue;
+        const dx = x - a[k + 1], dz = z - a[k + 2], c = a[k + 5], sn = a[k + 6];
+        if (Math.abs(dx * c - dz * sn) <= a[k + 3] + 0.15 && Math.abs(dx * sn + dz * c) <= a[k + 4] + 0.15) f = a[k + 8];
+      }
+    }
+    return f;
+  }
+  const probe = { x: 0, y: 0, z: 0 };
+  const penetration = (x, z, radius, y) => { probe.x = x; probe.z = z; probe.y = y === undefined ? getHeight(x, z) : y; return resolve(probe, radius, null, true); };
 
   const R = rng(SEED * 101), sl = new THREE.Vector2();
   const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), eu = new THREE.Euler();
@@ -353,7 +374,7 @@ export function createWorld(scene) {
     const base = getHeight(x, z) - 1.2;
     block(w * 1.35, 1.6, w * 1.35, x, base + 0.8, z, ry, stoneD);
     block(w, h, w, x, base + 1.6 + h / 2, z, ry);
-    addBox(x, z, w * 0.675, w * 0.675, ry || 0);
+    addBox(x, z, w * 0.675, w * 0.675, ry || 0, base, base + 1.6 + h);
     return base + 1.6 + h;
   }
   const emberSpots = [];
@@ -366,26 +387,31 @@ export function createWorld(scene) {
       if (broken) {
         const L = 5 + R() * 3, dr = R() * 3, bx = x + Math.cos(a) * 4, bz = z + Math.sin(a) * 4;
         const m = block(2.4, 2.4, L, bx, getHeight(bx, bz) + 0.7, bz, dr); m.rotation.z = 0.2;
-        addBox(bx, bz, 1.25, L / 2, dr);
+        addBox(bx, bz, 1.25, L / 2, dr, getHeight(bx, bz) - 0.6, getHeight(bx, bz) + 1.9);
       }
       const cur = broken ? null : { x, z, top };
       if (cur && prev) {
         const mx = (x + prev.x) / 2, mz = (z + prev.z) / 2, len = Math.hypot(x - prev.x, z - prev.z) + 2.6;
-        block(len, 1.8, 3, mx, Math.max(top, prev.top) + 0.9, mz, -Math.atan2(z - prev.z, x - prev.x));
+        const ly = Math.max(top, prev.top), lr = -Math.atan2(z - prev.z, x - prev.x);
+        block(len, 1.8, 3, mx, ly + 0.9, mz, lr);
+        addBox(mx, mz, len / 2, 1.5, lr, ly, ly + 1.8);
       }
       prev = cur;
     }
     block(7, 1.2, 7, cx, getHeight(cx, cz) + 0.2, cz, 0.4, stoneD);     // altar
     block(3, 1.6, 3, cx, getHeight(cx, cz) + 1.4, cz, 0.4);
-    addBox(cx, cz, 3.5, 3.5, 0.4);
+    addBox(cx, cz, 3.5, 3.5, 0.4, getHeight(cx, cz) - 0.4, getHeight(cx, cz) + 0.8);
+    addBox(cx, cz, 1.5, 1.5, 0.4, getHeight(cx, cz) + 0.6, getHeight(cx, cz) + 2.2);
     emberSpots.push([cx, getHeight(cx, cz) + 3.6, cz]);
   }
   function gate(cx, cz, ry) {
     const dx = Math.cos(ry) * 7, dz = -Math.sin(ry) * 7;
     const t1 = pillar(cx + dx, cz + dz, 4, 20, ry), t2 = pillar(cx - dx, cz - dz, 4, 20, ry);
-    block(22, 3.5, 5, cx, Math.max(t1, t2) + 1.75, cz, ry);
-    block(26, 1.5, 6.5, cx, Math.max(t1, t2) + 4.2, cz, ry, stoneD);
-    emberSpots.push([cx, getHeight(cx, cz) + 2.0, cz]);
+    const gt = Math.max(t1, t2);
+    block(22, 3.5, 5, cx, gt + 1.75, cz, ry);
+    block(26, 1.5, 6.5, cx, gt + 4.2, cz, ry, stoneD);
+    addBox(cx, cz, 11, 2.5, ry, gt, gt + 3.5); addBox(cx, cz, 13, 3.25, ry, gt + 3.5, gt + 4.95);
+    emberSpots.push([cx, gt + 4.95 + 1.7, cz]);                      // on top of the gate: a climb to earn it
   }
   ring(0, -46, 17, 12, 10);
   gate(0, -110, 0);
@@ -419,7 +445,7 @@ export function createWorld(scene) {
     getHeight, getSlope, resolve, heightTex, waterUniforms, N, SIZE, WATER,
     trailDist, emberSpots,
     wake() { beacon.material.emissiveIntensity = 16; beacon.scale.setScalar(1.6); },
-    penetration, lampSpots,
+    penetration, floorAt, lampSpots,
     pollLit() { const n = litNow; litNow = 0; return n; },
     update(t, night, pp, dt) {
       beacon.rotation.y = t * 0.4; beacon.position.y = y + 14 + Math.sin(t * 0.8) * 1.5;

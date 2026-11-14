@@ -144,7 +144,7 @@ export class Player {
     this.yaw = 0; this.pitch = 0.52; this.dist = 18; this.distT = 18; this.jumpBuf = 0; this.rollBuf = 0; this.coyote = 0; this.fov = 30;
     this.camTarget = this.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
     this.keys = {}; this.active = false; this.events = []; this.stepN = 0;
-    this.hit = { tree: false, bush: false, x: 0, z: 0 }; this.bumpCd = 0; this.rustleCd = 0;
+    this.hit = { tree: false, bush: false, wall: false, wallTop: 0, nx: 0, nz: 0, x: 0, z: 0 }; this.climb = null; this.pushT = 0; this.bumpCd = 0; this.rustleCd = 0;
     this.squash = 0; this.squashV = 0; this.shake = 0; this.shakeT = 0; this.landV = 0;
     this._sl = new THREE.Vector2(); this._v = new THREE.Vector3();
     this.pose = { legL: 0, legR: 0, kneeL: 0, kneeR: 0, armL: 0, armR: 0, elbowL: 0, elbowR: 0, armZ: 0.12, lean: 0, bob: 0, tilt: 0 };
@@ -200,6 +200,34 @@ export class Player {
     k.Roll = false;
 
     const maxSpeed = this.swim ? 4.4 : wantSprint ? 10.5 : 6.2;
+    if (this.climb) {
+      // holding on costs breath; W climbs, S descends, A/D shuffle, Space kicks off, Shift hurries
+      const c = this.climb, fast = k.ShiftLeft || k.ShiftRight;
+      this.stamina -= (fast ? 19 : 11) * dt; this.staminaWait = 0.5;
+      v.set(0, 0, 0);
+      const up = k.KeyW ? 1 : k.KeyS ? -1 : 0, side = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
+      p.y += up * (fast ? 4.4 : 3.0) * dt;
+      p.x += c.nz * side * 1.8 * dt; p.z += -c.nx * side * 1.8 * dt;
+      p.x -= c.nx * 0.05; p.z -= c.nz * 0.05;                 // lean in so the wall keeps answering
+      this.phase += dt * 7.5 * (up !== 0 || side !== 0 ? 1 : 0);
+      this.heading = dampAngle(this.heading, Math.atan2(-c.nx, -c.nz), 1 - Math.exp(-18 * dt));
+      w.resolve(p, 0.55, this.hit);
+      const gy = w.floorAt(p.x, p.z, p.y);
+      if (p.y >= c.top - 0.35) {                              // mantle onto the top
+        p.y = c.top; p.x -= c.nx * 1.0; p.z -= c.nz * 1.0; this.climb = null; this.grounded = true; this.squashV = 2.2; this.events.push('mantle');
+      } else if (this.jumpBuf > 0 && !this.climbJustStarted) { // kick off the wall
+        this.climb = null; this.jumpBuf = 0; v.x = c.nx * 6.5; v.z = c.nz * 6.5; v.y = 9; this.events.push('jump'); this.squashV = 3;
+      } else if (this.stamina <= 0) { this.stamina = 0; this.exhausted = true; this.climb = null; }
+      else if (!this.hit.wall || (up < 0 && p.y <= gy + 0.05)) { this.climb = null; }
+      else { c.nx = this.hit.nx; c.nz = this.hit.nz; c.top = this.hit.wallTop; }
+      if (!k.Space) this.climbJustStarted = false;
+      this.grounded = !this.climb ? this.grounded : false; this.airT = 0; this.coyote = 0;
+      if (this.land > 0) this.land -= dt;
+      this.turn = 0;
+      this.animate(dt, elapsed, 0, false);
+      this.updateCamera(dt, false);
+      return;
+    }
     if (this.roll > 0) {
       this.roll -= dt;
       // steerable, and it hands its speed back to the run instead of stalling at the end
@@ -229,8 +257,16 @@ export class Player {
     this.bumpCd -= dt; this.rustleCd -= dt;
     if (this.hit.tree && spd0 > 5.5 && this.bumpCd <= 0) { this.bumpCd = 0.6; this.events.push('bump'); this.squashV = -1.6; }
     if (this.hit.bush && spd0 > 2 && this.rustleCd <= 0) { this.rustleCd = 0.3; this.events.push('rustle'); }
+    // push into a wall taller than a step and the wanderer grabs it
+    if (this.hit.wall && this.hit.wallTop > p.y + 0.6 && il > 0 && (wx * -this.hit.nx + wz * -this.hit.nz) > 0.72 && !this.exhausted && this.roll <= 0 && !this.swim) {
+      this.pushT += dt;
+      if (this.pushT > 0.1 || !this.grounded) {
+        this.climb = { nx: this.hit.nx, nz: this.hit.nz, top: this.hit.wallTop }; this.pushT = 0; this.climbJustStarted = true;
+        v.set(0, 0, 0); this.events.push('grab'); this.squashV = -1.5;
+      }
+    } else this.pushT = 0;
 
-    const g2 = w.getHeight(p.x, p.z), floorY = Math.max(g2, w.WATER - 1.15);
+    const g2 = w.floorAt(p.x, p.z, p.y), floorY = Math.max(g2, w.WATER - 1.15);
     const wasAir = !this.grounded;
     if (p.y <= floorY + (this.grounded ? 0.35 : 0)) {
       if (wasAir && this.airT > 0.12) { this.events.push('land'); this.landV = -v.y; this.squashV = -Math.min(5.5, 1.5 + this.landV * 0.28); }
@@ -256,13 +292,16 @@ export class Player {
     const stepN = Math.floor(this.phase / Math.PI);        // one footfall per half cycle
     if (stepN !== this.stepN) {
       this.stepN = stepN;
+      if (this.climb) this.events.push('grab');
       if (sp > 1 && this.roll <= 0 && (this.grounded || this.swim)) this.events.push(this.swim ? 'swim' : sprint ? 'stepRun' : 'step');
     }
     const ph = this.phase, s = Math.sin(ph), c = Math.cos(ph);
     let t = { legL: 0, legR: 0, kneeL: 0.04, kneeR: 0.04, armL: 0, armR: 0, elbowL: -0.15, elbowR: -0.15, armZ: 0.12, lean: 0, bob: 0, tilt: 0 };
     const breath = Math.sin(elapsed * 1.6);
 
-    if (this.roll > 0) {
+    if (this.climb) {
+      t = { legL: -0.7 + c * 0.55, legR: -0.7 - c * 0.55, kneeL: 1.2 - c * 0.5, kneeR: 1.2 + c * 0.5, armL: -2.5 + s * 0.45, armR: -2.5 - s * 0.45, elbowL: -0.5 - s * 0.4, elbowR: -0.5 + s * 0.4, armZ: 0.28, lean: -0.08, bob: Math.abs(s) * 0.04, tilt: s * 0.06 };
+    } else if (this.roll > 0) {
       t = { legL: -1.9, legR: -1.9, kneeL: 2.2, kneeR: 2.2, armL: -1.2, armR: -1.2, elbowL: -1.8, elbowR: -1.8, armZ: 0.3, lean: 0.5, bob: -0.5, tilt: 0 };
     } else if (this.swim) {
       t.lean = 1.1; t.bob = -0.25 + Math.sin(elapsed * 2.2) * 0.04;

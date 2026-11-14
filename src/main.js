@@ -131,6 +131,8 @@ function sim(dt) {
     else if (ev === 'rustle') { audio.rustle(); fx.leaves(player.hit.x, p.y + 1.1, player.hit.z, 5, 1.2, '#9fd66a'); }
     else if (ev === 'roll') { audio.roll(); fx.dust(p, soil, 6, 1.5); }
     else if (ev === 'swim') { audio.swim(); fx.splash(p); }
+    else if (ev === 'grab') { audio.step('dirt', false); fx.dust({ x: p.x, y: p.y + 2.2, z: p.z }, '#d8cdb8', 1, 0.5); }
+    else if (ev === 'mantle') { audio.land(); fx.dust(p, '#d8cdb8', 5, 1.2); }
   }
   player.events.length = 0;
   fx.update(dt);

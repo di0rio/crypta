@@ -1,105 +1,36 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CRYPTA</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERMO</title>
 <link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
 </head>
 <body>
-<canvas id="game" width="400" height="225"></canvas>
+<canvas id="c"></canvas>
 
 <div id="hud" class="hidden">
-  <div id="hud-left" class="panel hidden">
-    <div class="row"><span class="lbl">HP</span><div class="bar"><i id="bar-hp" class="f-hp"></i><b id="txt-hp"></b></div></div>
-    <div class="row"><span class="lbl">ESC</span><div class="bar"><i id="bar-sh" class="f-sh"></i><b id="txt-sh"></b></div></div>
-    <div class="row"><span class="lbl">EN</span><div class="bar"><i id="bar-en" class="f-en"></i><b id="txt-en"></b></div></div>
-    <div class="row wrow"><span class="lbl">ARMA</span><span id="w-cur"></span></div>
-    <div class="row"><span class="lbl"></span><span id="w-alt" class="dim"></span></div>
-    <div class="row"><span class="lbl coin">$</span><span id="txt-coins">0</span></div>
-  </div>
-  <div id="hud-right">
-    <div id="hud-map" class="panel hidden">
-      <canvas id="minimap" width="120" height="76"></canvas>
-      <div id="hud-floor"></div>
-    </div>
-    <div id="hud-code" class="panel hidden">
-      <div class="dim">SALA</div><div id="room-code"></div>
-      <button id="b-copy" class="btn small">COPIAR LINK</button>
-    </div>
-  </div>
-  <div id="hud-players" class="panel hidden"></div>
-  <div id="hud-boss" class="hidden"><div id="boss-name"></div><div class="bossbar"><i id="boss-fill"></i></div></div>
-  <div id="hud-hint" class="hidden"></div>
+  <div id="clock">08:00</div>
+  <svg id="stamina" viewBox="0 0 60 60" aria-hidden="true">
+    <circle class="bg" cx="30" cy="30" r="24"/>
+    <circle class="fg" id="stamina-arc" cx="30" cy="30" r="24"/>
+  </svg>
+  <div id="hint">WASD mover · mouse câmera · Shift correr · Espaço pular · Q rolar · T acelerar o tempo</div>
 </div>
 
-<div id="toast" class="hidden"></div>
-
-<div id="screen-menu" class="screen">
-  <div class="panel menu">
-    <h1>CRYPTA</h1>
-    <p class="sub">MASMORRA COOPERATIVA</p>
-    <button id="b-solo" class="btn">JOGAR SOLO</button>
-    <button id="b-host" class="btn">CRIAR SALA</button>
-    <button id="b-join" class="btn">ENTRAR NA SALA</button>
-    <div id="join-box" class="hidden">
-      <input id="join-code" maxlength="5" placeholder="CODIGO" autocomplete="off" spellcheck="false">
-      <div class="inline"><button id="b-join-go" class="btn small">ENTRAR</button><button id="b-join-cancel" class="btn small alt">CANCELAR</button></div>
-    </div>
-    <button id="b-char" class="btn">PERSONAGEM</button>
-    <button id="b-menu-mute" class="btn small alt">SOM: LIGADO</button>
-    <div id="menu-msg"></div>
-    <div class="keys">WASD MOVER - MOUSE MIRAR - CLIQUE ATIRAR<br>ESPACO DASH - E INTERAGIR - Q TROCAR ARMA - ESC PAUSA</div>
-  </div>
+<div id="start">
+  <h1>ERMO</h1>
+  <p class="sub">um mundo antigo, aberto, em silêncio</p>
+  <button id="enter">entrar</button>
+  <p id="loading">gerando o mundo…</p>
 </div>
 
-<div id="screen-char" class="screen hidden">
-  <div class="panel charbox">
-    <h2>PERSONAGEM</h2>
-    <div class="charwrap">
-      <div class="prevcol"><canvas id="preview" width="128" height="128"></canvas>
-        <button id="b-rand" class="btn small">ALEATORIO</button></div>
-      <div id="char-opts"></div>
-    </div>
-    <button id="b-char-back" class="btn">SALVAR E VOLTAR</button>
-  </div>
-</div>
-
-<div id="screen-pause" class="screen hidden">
-  <div class="panel menu">
-    <h2>PAUSA</h2>
-    <button id="b-resume" class="btn">CONTINUAR</button>
-    <button id="b-pause-mute" class="btn alt">SOM: LIGADO</button>
-    <button id="b-quit" class="btn alt">SAIR PARA O MENU</button>
-  </div>
-</div>
-
-<div id="screen-over" class="screen hidden">
-  <div class="panel menu">
-    <h2 class="red">FIM DE JOGO</h2>
-    <div id="over-stats"></div>
-    <button id="b-over-again" class="btn">JOGAR DE NOVO</button>
-    <div id="over-wait" class="dim hidden">AGUARDANDO O HOST...</div>
-    <button id="b-over-menu" class="btn alt">MENU</button>
-  </div>
-</div>
-
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/core.js"></script>
-<script src="js/input.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/data.js"></script>
-<script src="js/sprites.js"></script>
-<script src="js/particles.js"></script>
-<script src="js/entities.js"></script>
-<script src="js/dungeon.js"></script>
-<script src="js/mode-dungeon.js"></script>
-<script src="js/hub.js"></script>
-<script src="js/net.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/main.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

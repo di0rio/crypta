@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Small pooled particle system for game feel: dust under the feet, landing puffs, water splashes, ember sparks.
 
-const MAX = 320;
+const MAX = 520;
 const VERT = /* glsl */`
 attribute float aSize; attribute float aAlpha; attribute vec3 aColor;
 uniform float uScale;
@@ -59,6 +59,12 @@ export function createFx(scene) {
     },
     leaves(x, y, z, n, spread, color) {
       for (let i = 0; i < n; i++) emit(x + rnd(spread), y + rnd(spread * 0.6), z + rnd(spread), rnd(1.8), -0.3 - Math.random() * 0.8, rnd(1.8), 0.16 + Math.random() * 0.12, 1.1 + Math.random() * 0.9, i % 3 ? color : '#d9e88a', 0.95, 0, -1.2);
+    },
+    hit(x, y, z, color) {
+      for (let i = 0; i < 12; i++) { const a = Math.random() * 6.28, s = 3 + Math.random() * 6; emit(x, y, z, Math.cos(a) * s, 1 + Math.random() * 4, Math.sin(a) * s, 0.2 + Math.random() * 0.2, 0.3 + Math.random() * 0.25, i % 2 ? color : '#ffffff', 1, -0.6, -8); }
+    },
+    smoke(x, y, z, color, n, sz) {
+      for (let i = 0; i < n; i++) emit(x + rnd(sz), y + Math.random() * sz, z + rnd(sz), rnd(2.5), 0.6 + Math.random() * 1.6, rnd(2.5), sz * (0.4 + Math.random() * 0.4), 0.8 + Math.random() * 0.7, color, 0.55, sz * 0.6, 0.4);
     },
     sparks(x, y, z) {
       for (let i = 0; i < 36; i++) { const a = Math.random() * 6.28, u = Math.random() * 2 - 1, s = 3 + Math.random() * 5, r = Math.sqrt(1 - u * u);

@@ -45,3 +45,19 @@ html, body { height: 100%; overflow: hidden; background: #05070d; color: #f2ede2
 #reset { background: none; border: 0; color: inherit; font: inherit; font-size: 12px; letter-spacing: .3em; text-transform: uppercase;
   opacity: .6; cursor: pointer; padding: 8px 12px; }
 #reset:hover, #reset:focus-visible { opacity: 1; text-decoration: underline; outline: none; }
+
+#hp { position: absolute; top: 48px; left: 28px; display: flex; gap: 6px; }
+#hp i { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.75); transform: rotate(45deg); background: rgba(0,0,0,.25); transition: background .2s; }
+#hp i.on { background: #e8503f; border-color: #fff; box-shadow: 0 0 8px rgba(232,80,63,.7); }
+#boss { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); width: min(560px, 70vw); text-align: center; }
+#boss span { font-family: Georgia, serif; font-size: 15px; letter-spacing: .4em; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+#boss div { margin-top: 8px; height: 8px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); }
+#boss i { display: block; height: 100%; width: 100%; background: #7fe9ff; box-shadow: 0 0 10px #2fd0ff; transition: width .25s; }
+#fade { position: fixed; inset: 0; background: #05070d; opacity: 0; pointer-events: none; }
+#win { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center;
+  background: radial-gradient(rgba(5,7,13,.35), rgba(5,7,13,.8)); }
+#win h2 { font-family: Georgia, serif; font-weight: 400; font-size: clamp(36px, 6vw, 76px); letter-spacing: .12em; text-shadow: 0 4px 30px rgba(0,0,0,.6); }
+#win p { font-size: 14px; letter-spacing: .14em; opacity: .85; }
+#win button { margin-top: 18px; padding: 12px 36px; background: transparent; color: inherit; cursor: pointer; border: 1px solid rgba(242,237,226,.6);
+  font: inherit; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; }
+#win button:hover, #win button:focus-visible { background: #f2ede2; color: #10131c; outline: none; }

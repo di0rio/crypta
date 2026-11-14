@@ -9,6 +9,7 @@ export const SEG = 400;        // terrain cells per edge (4 m each)
 export const WATER = 0;
 const N = SEG + 1, CELL = SIZE / SEG, HALF = SIZE / 2;
 const SEED = 7;
+export const ARENA = { x: 0, z: -472, y: 40, r: 40 };
 
 function heightAt(x, z) {
   const d = Math.hypot(x, z);
@@ -16,7 +17,8 @@ function heightAt(x, z) {
   const m = smoothstep(360, 760, d);
   h += m * (50 + ridged(x * 0.0036 + 50, z * 0.0036, 4, SEED) * 210);          // mountain ring
   h += (vnoise(x * 0.045, z * 0.045, SEED + 3) - 0.5) * 1.6;                   // small bumps
-  return lerp(h, 7, smoothstep(140, 20, d) * 0.9);                             // gentle plateau at the spawn
+  h = lerp(h, 7, smoothstep(140, 20, d) * 0.9);                                // gentle plateau at the spawn
+  return lerp(h, ARENA.y, smoothstep(80, 42, Math.hypot(x - ARENA.x, z - ARENA.z)));   // flat arena at the foot of the Spire
 }
 
 export function createWorld(scene) {
@@ -256,7 +258,7 @@ export function createWorld(scene) {
     let n = 0;
     for (let tries = 0; tries < count * 30 && n < count; tries++) {
       const x = (R() - 0.5) * (SIZE - 80), z = (R() - 0.5) * (SIZE - 80), h = getHeight(x, z);
-      if (Math.hypot(x, z) < 34 || !accept(x, z, h) || trailDist(x, z) < 6.5) continue;
+      if (Math.hypot(x, z) < 34 || !accept(x, z, h) || trailDist(x, z) < 6.5 || Math.hypot(x - ARENA.x, z - ARENA.z) < ARENA.r + 8) continue;
       getSlope(x, z, sl); if (sl.length() > 0.55) continue;
       const s = 0.75 + R() * 1.15;
       ps.set(x, h - 0.35, z); qt.setFromEuler(eu.set((R() - 0.5) * 0.1, R() * 6.28, (R() - 0.5) * 0.1)); sc.set(s, s * (0.85 + R() * 0.4), s);
@@ -377,7 +379,7 @@ export function createWorld(scene) {
     addBox(x, z, w * 0.675, w * 0.675, ry || 0, base, base + 1.6 + h);
     return base + 1.6 + h;
   }
-  const emberSpots = [];
+  const emberSpots = [], sites = [];
   function ring(cx, cz, rad, n, hBase) {
     let prev = null;
     for (let i = 0; i < n; i++) {
@@ -402,7 +404,7 @@ export function createWorld(scene) {
     block(3, 1.6, 3, cx, getHeight(cx, cz) + 1.4, cz, 0.4);
     addBox(cx, cz, 3.5, 3.5, 0.4, getHeight(cx, cz) - 0.4, getHeight(cx, cz) + 0.8);
     addBox(cx, cz, 1.5, 1.5, 0.4, getHeight(cx, cz) + 0.6, getHeight(cx, cz) + 2.2);
-    emberSpots.push([cx, getHeight(cx, cz) + 3.6, cz]);
+    emberSpots.push([cx, getHeight(cx, cz) + 3.6, cz]); sites.push({ x: cx, z: cz, kind: 'ring', r: rad });
   }
   function gate(cx, cz, ry) {
     const dx = Math.cos(ry) * 7, dz = -Math.sin(ry) * 7;
@@ -411,18 +413,18 @@ export function createWorld(scene) {
     block(22, 3.5, 5, cx, gt + 1.75, cz, ry);
     block(26, 1.5, 6.5, cx, gt + 4.2, cz, ry, stoneD);
     addBox(cx, cz, 11, 2.5, ry, gt, gt + 3.5); addBox(cx, cz, 13, 3.25, ry, gt + 3.5, gt + 4.95);
-    emberSpots.push([cx, gt + 4.95 + 1.7, cz]);                      // on top of the gate: a climb to earn it
+    emberSpots.push([cx, gt + 4.95 + 1.7, cz]); sites.push({ x: cx, z: cz, kind: 'gate', r: 9 });                      // on top of the gate: a climb to earn it
   }
   ring(0, -46, 17, 12, 10);
   gate(0, -110, 0);
   // more sites on flat ground across the map
-  let sites = 0;
-  for (let tries = 0; tries < 4000 && sites < 9; tries++) {
+  let nSites = 0;
+  for (let tries = 0; tries < 4000 && nSites < 9; tries++) {
     const x = (R() - 0.5) * 1300, z = (R() - 0.5) * 1300, h = getHeight(x, z);
-    if (h < 5 || h > 110 || Math.hypot(x, z) < 180) continue;
+    if (h < 5 || h > 110 || Math.hypot(x, z) < 180 || Math.hypot(x - ARENA.x, z - ARENA.z) < 110) continue;
     getSlope(x, z, sl); if (sl.length() > 0.12) continue;
-    if (sites % 3 === 2) gate(x, z, R() * 3.14); else ring(x, z, 12 + R() * 10, 9 + Math.floor(R() * 6), 8 + R() * 5);
-    sites++;
+    if (nSites % 3 === 2) gate(x, z, R() * 3.14); else ring(x, z, 12 + R() * 10, 9 + Math.floor(R() * 6), 8 + R() * 5);
+    nSites++;
   }
 
   [1, 7, 8, 9, 10].forEach((i) => { const x = TRAIL[i][0], z = TRAIL[i][1]; if (getHeight(x, z) > 1) emberSpots.push([x, getHeight(x, z) + 1.7, z]); });
@@ -443,7 +445,7 @@ export function createWorld(scene) {
 
   return {
     getHeight, getSlope, resolve, heightTex, waterUniforms, N, SIZE, WATER,
-    trailDist, emberSpots,
+    trailDist, emberSpots, sites, trail: TRAIL, arena: ARENA,
     wake() { beacon.material.emissiveIntensity = 16; beacon.scale.setScalar(1.6); },
     penetration, floorAt, lampSpots,
     pollLit() { const n = litNow; litNow = 0; return n; },

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ERMO</title>
-<link rel="stylesheet" href="css/style.css?v=7">
+<link rel="stylesheet" href="css/style.css?v=8">
 <script type="importmap">
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -18,12 +18,22 @@
 <div id="hud" class="hidden">
   <div id="clock">08:00</div>
   <div id="embers">BRASAS 0 / 0</div>
+  <div id="hp" aria-label="vida"></div>
+  <div id="boss" class="hidden"><span>O COLOSSO</span><div><i id="boss-bar"></i></div></div>
   <div id="toast"></div>
   <svg id="stamina" viewBox="0 0 60 60" aria-hidden="true">
     <circle class="bg" cx="30" cy="30" r="24"/>
     <circle class="fg" id="stamina-arc" cx="30" cy="30" r="24"/>
   </svg>
-  <div id="hint">WASD mover · mouse câmera · Shift correr · Espaço pular · Q rolar · ande contra uma parede para escalar · roda zoom · M som · T acelerar o tempo</div>
+  <div id="hint">WASD mover · mouse câmera · clique ou F atacar · Shift correr · Espaço pular · Q rolar · ande contra uma parede para escalar · roda zoom · M som · T acelerar o tempo</div>
+</div>
+
+<div id="fade"></div>
+<div id="win" class="hidden">
+  <h2>O ermo respira.</h2>
+  <p>O Colosso caiu e a Torre arde sobre o vale.</p>
+  <p id="win-stats"></p>
+  <button id="win-go">continuar explorando</button>
 </div>
 
 <div id="start">
@@ -34,6 +44,6 @@
   <p id="loading">gerando o mundo…</p>
 </div>
 
-<script type="module" src="src/main.js?v=7"></script>
+<script type="module" src="src/main.js?v=8"></script>
 </body>
 </html>

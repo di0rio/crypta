@@ -128,7 +128,13 @@ function buildCharacter() {
   const [legL, kneeL] = limb(0.095, -0.06, 0.42, 0.4, [0.088, 0.068, dark], [0.067, 0.056, leather], legDeco);
   const [legR, kneeR] = limb(-0.095, -0.06, 0.42, 0.4, [0.088, 0.068, dark], [0.067, 0.056, leather], legDeco);
 
-  return { root, body, head, torso, scarf, tail, poncho, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR };
+  // drawn sword in the right hand (the one on the back hides while it is out)
+  const blade = new THREE.Group(); blade.position.set(0, -0.3, 0.02);
+  blade.add(part(new THREE.BoxGeometry(0.05, 0.02, 0.95), steel, 0, 0, 0.56), part(new THREE.BoxGeometry(0.2, 0.035, 0.05), gold, 0, 0, 0.07),
+    part(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 8).rotateX(Math.PI / 2), leatherD, 0, 0, -0.03));
+  elbowR.add(blade); blade.visible = false;
+
+  return { root, body, head, torso, scarf, tail, poncho, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR, blade, sheath: sword };
 }
 
 export class Player {
@@ -144,6 +150,7 @@ export class Player {
     this.yaw = 0; this.pitch = 0.52; this.dist = 18; this.distT = 18; this.jumpBuf = 0; this.rollBuf = 0; this.coyote = 0; this.fov = 30;
     this.camTarget = this.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
     this.keys = {}; this.active = false; this.events = []; this.stepN = 0;
+    this.hp = 100; this.maxHp = 100; this.atk = -1; this.atkN = 0; this.atkBuf = 0; this.atkId = 0; this.inv = 0; this.dead = 0; this.hurtT = 0;
     this.hit = { tree: false, bush: false, wall: false, wallTop: 0, nx: 0, nz: 0, x: 0, z: 0 }; this.climb = null; this.pushT = 0; this.bumpCd = 0; this.rustleCd = 0;
     this.squash = 0; this.squashV = 0; this.shake = 0; this.shakeT = 0; this.landV = 0;
     this._sl = new THREE.Vector2(); this._v = new THREE.Vector3();
@@ -153,7 +160,7 @@ export class Player {
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     addEventListener('blur', () => { this.keys = {}; });
     let drag = false;
-    dom.addEventListener('mousedown', (e) => { if (!this.active) return; if (e.button === 2) this.keys.Roll = true; if (document.pointerLockElement !== dom) { drag = true; dom.requestPointerLock && dom.requestPointerLock(); } });
+    dom.addEventListener('mousedown', (e) => { if (!this.active) return; if (e.button === 2) this.keys.Roll = true; if (e.button === 0 && document.pointerLockElement === dom) this.keys.Attack = true; if (document.pointerLockElement !== dom) { drag = true; dom.requestPointerLock && dom.requestPointerLock(); } });
     addEventListener('mouseup', (e) => { drag = false; if (e.button === 2) this.keys.Roll = false; });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
@@ -170,11 +177,23 @@ export class Player {
     this.yaw += ax * dt * 1.8; this.pitch = clamp(this.pitch + ay * dt * 1.1, 0.22, 1.4);
 
     let ix = 0, iz = 0;
-    if (this.active) { ix = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0); iz = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0); }
+    if (this.active && this.dead <= 0) { ix = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0); iz = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0); }
     const il = Math.hypot(ix, iz); if (il > 0) { ix /= il; iz /= il; }
     const sn = Math.sin(this.yaw), cs = Math.cos(this.yaw);
     const wx = -sn * iz + cs * ix, wz = -cs * iz - sn * ix;
 
+    if (this.inv > 0) this.inv -= dt; if (this.hurtT > 0) this.hurtT -= dt;
+    if (this.dead > 0) { this.dead -= dt; this.climb = null; this.jumpBuf = this.rollBuf = this.atkBuf = 0; k.Attack = false; }
+    // sword: buffered three-hit combo with a small lunge so it reaches
+    this.atkBuf -= dt; if (this.atk > -1) this.atk -= dt;
+    if (this.active && this.dead <= 0 && (k.Attack || k.KeyJ || k.KeyF)) this.atkBuf = 0.2;
+    k.Attack = false;
+    if (this.atkBuf > 0 && this.atk <= 0.1 && this.roll <= 0 && !this.swim && !this.climb) {
+      this.atkBuf = 0; this.atkN = this.atk > -0.3 ? (this.atkN + 1) % 3 : 0; this.atk = 0.3; this.atkId++;
+      if (il > 0) this.heading = Math.atan2(wx, wz);
+      v.x += Math.sin(this.heading) * 4.5; v.z += Math.cos(this.heading) * 4.5;
+      this.events.push('swing');
+    }
     const ground = w.getHeight(p.x, p.z);
     this.swim = ground < w.WATER - 1.15 && p.y <= w.WATER - 1.0;
 
@@ -187,8 +206,8 @@ export class Player {
 
     // buffered inputs: a press slightly too early still counts; coyote time forgives leaving a ledge
     this.jumpBuf -= dt; this.rollBuf -= dt;
-    if (this.active && k.Space) this.jumpBuf = 0.12;
-    if (this.active && (k.KeyQ || k.Roll)) this.rollBuf = 0.16;
+    if (this.active && k.Space && this.dead <= 0) this.jumpBuf = 0.12;
+    if (this.active && (k.KeyQ || k.Roll) && this.dead <= 0) this.rollBuf = 0.16;
     this.coyote = this.grounded ? 0.12 : this.coyote - dt;
 
     // roll
@@ -286,6 +305,17 @@ export class Player {
     this.updateCamera(dt, wantSprint);
   }
 
+  // returns true if the blow landed (rolling and recent hits make the wanderer untouchable)
+  hurt(dmg, fx, fz) {
+    if (this.inv > 0 || this.roll > 0.1 || this.dead > 0) return false;
+    this.hp -= dmg; this.inv = 0.9; this.hurtT = 0.4; this.climb = null;
+    const dx = this.pos.x - fx, dz = this.pos.z - fz, d = Math.hypot(dx, dz) || 1;
+    this.vel.x = dx / d * 10; this.vel.z = dz / d * 10; this.vel.y = 5.5; this.grounded = false; this.coyote = 0;
+    this.squashV = -3; this.events.push('hurt');
+    if (this.hp <= 0) { this.hp = 0; this.dead = 2.6; this.events.push('dead'); }
+    return true;
+  }
+
   animate(dt, elapsed, sp, sprint) {
     const r = this.rig, P = this.pose, A = clamp(sp / 6.2, 0, 1.25);
     this.phase += dt * (sp > 0.3 ? 5.5 + sp * 0.75 : 0);
@@ -299,7 +329,9 @@ export class Player {
     let t = { legL: 0, legR: 0, kneeL: 0.04, kneeR: 0.04, armL: 0, armR: 0, elbowL: -0.15, elbowR: -0.15, armZ: 0.12, lean: 0, bob: 0, tilt: 0 };
     const breath = Math.sin(elapsed * 1.6);
 
-    if (this.climb) {
+    if (this.dead > 0) {
+      t = { legL: 0.2, legR: -0.1, kneeL: 0.3, kneeR: 0.2, armL: -0.6, armR: 0.5, elbowL: -0.4, elbowR: -0.3, armZ: 0.7, lean: 1.45, bob: -0.62, tilt: 0.2 };
+    } else if (this.climb) {
       t = { legL: -0.7 + c * 0.55, legR: -0.7 - c * 0.55, kneeL: 1.2 - c * 0.5, kneeR: 1.2 + c * 0.5, armL: -2.5 + s * 0.45, armR: -2.5 - s * 0.45, elbowL: -0.5 - s * 0.4, elbowR: -0.5 + s * 0.4, armZ: 0.28, lean: -0.08, bob: Math.abs(s) * 0.04, tilt: s * 0.06 };
     } else if (this.roll > 0) {
       t = { legL: -1.9, legR: -1.9, kneeL: 2.2, kneeR: 2.2, armL: -1.2, armR: -1.2, elbowL: -1.8, elbowR: -1.8, armZ: 0.3, lean: 0.5, bob: -0.5, tilt: 0 };
@@ -331,10 +363,20 @@ export class Player {
     r.legL.rotation.x = P.legL; r.legR.rotation.x = P.legR; r.kneeL.rotation.x = P.kneeL; r.kneeR.rotation.x = P.kneeR;
     r.armL.rotation.x = P.armL; r.armR.rotation.x = P.armR; r.elbowL.rotation.x = P.elbowL; r.elbowR.rotation.x = P.elbowR;
     r.armL.rotation.z = P.armZ; r.armR.rotation.z = -P.armZ;
+    // sword swing rides on top of whatever the body is doing: two side cuts, then an overhead finisher
+    const sw = this.atk > 0 ? 1 - this.atk / 0.3 : -1, dirS = this.atkN === 1 ? -1 : 1;
+    r.blade.visible = this.atk > -0.7; r.sheath.visible = !r.blade.visible;
+    if (sw >= 0) {
+      const e = sw * sw * (3 - 2 * sw);
+      if (this.atkN === 2) { r.armR.rotation.x = lerp(-3.0, 0.3, e); r.armR.rotation.z = -0.25; }
+      else { r.armR.rotation.x = lerp(-1.7, -1.1, e); r.armR.rotation.z = lerp(1.4, -1.6, e) * dirS; }
+      r.elbowR.rotation.x = -0.2;
+    }
+    r.root.visible = !(this.inv > 0 && this.hurtT <= 0 && this.dead <= 0 && Math.floor(elapsed * 20) % 2 === 0);
     r.body.position.y = 0.95 + P.bob;
     r.body.rotation.x = P.lean + (this.roll > 0 ? (1 - this.roll / 0.6) * Math.PI * 2 : 0);
     r.body.rotation.z = P.tilt;
-    r.body.rotation.y = Math.sin(ph) * 0.12 * Math.min(A, 1);
+    r.body.rotation.y = Math.sin(ph) * 0.12 * Math.min(A, 1) + (sw >= 0 ? (0.75 - sw * 1.5) * dirS * (this.atkN === 2 ? 0.15 : 1) : 0);
     r.head.rotation.x = -P.lean * 0.55; r.head.rotation.y = -r.body.rotation.y + clamp(this.turn * 0.05, -0.4, 0.4);
     r.torso.scale.set(1 + breath * 0.012, 1 + breath * 0.006, 0.76 * (1 + breath * 0.03));
 

@@ -13,59 +13,121 @@ function dampAngle(a, b, k) {
   return a + d * k;
 }
 
+const V2 = (p) => new THREE.Vector2(p[0], p[1]);
+function lathe(pts, seg, material, sz) {
+  const m = part(new THREE.LatheGeometry(pts.map(V2), seg), material);
+  if (sz) m.scale.z = sz;
+  return m;
+}
+// tapered tube hanging down from the origin
+const tube = (r0, r1, len, material) => part(new THREE.CylinderGeometry(r0, r1, len, 12), material, 0, -len / 2, 0);
+const ball = (r, material, x, y, z, sx, sy, sz) => { const m = part(new THREE.SphereGeometry(r, 14, 10), material, x, y, z); if (sx) m.scale.set(sx, sy, sz); return m; };
+
 function buildCharacter() {
-  const skin = mat('#e0b089'), tunic = mat('#ece2c8'), poncho = mat('#2f7377', { side: THREE.DoubleSide }),
-    ponchoTrim = mat('#e9c46a', { side: THREE.DoubleSide }), dark = mat('#3a3040'), hair = mat('#2a1c16'),
-    scarfM = mat('#d63a2f'), leather = mat('#7a5232'), steel = mat('#c9ced6', { roughness: 0.35, metalness: 0.7 });
+  const DS = { side: THREE.DoubleSide };
+  const skin = mat('#e3b38d', { roughness: 0.7 }), tunic = mat('#efe6cf'), tunicD = mat('#e2d6b8', DS), dark = mat('#352c3d'),
+    hair = mat('#2b1b15', { roughness: 0.55 }), scarfM = mat('#d8392e'), leather = mat('#7b5231'), leatherD = mat('#55371f'),
+    steel = mat('#c9ced6', { roughness: 0.3, metalness: 0.75 }), gold = mat('#e6bf5a', { roughness: 0.4, metalness: 0.55 }),
+    white = mat('#ffffff', { roughness: 0.3 });
 
   const root = new THREE.Group(), body = new THREE.Group();
   body.position.y = 0.95; root.add(body);
 
-  body.add(part(new THREE.BoxGeometry(0.36, 0.22, 0.24), dark, 0, 0, 0));
-  const torso = part(new THREE.CapsuleGeometry(0.185, 0.3, 4, 12), tunic, 0, 0.32, 0); body.add(torso);
-  body.add(part(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 12), leather, 0, 0.1, 0));              // belt
-  body.add(part(new THREE.ConeGeometry(0.46, 0.5, 12, 1, true), poncho, 0, 0.44, 0));
-  body.add(part(new THREE.CylinderGeometry(0.465, 0.47, 0.05, 12, 1, true), ponchoTrim, 0, 0.2, 0));
+  // pelvis, short tunic skirt, torso
+  body.add(lathe([[0.001, -0.15], [0.12, -0.14], [0.17, -0.05], [0.168, 0.06], [0.15, 0.1]], 16, dark, 0.8));
+  body.add(lathe([[0.158, 0.12], [0.186, 0.02], [0.202, -0.09]], 18, tunicD, 0.82));
+  const torso = lathe([[0.001, 0.0], [0.15, 0.02], [0.16, 0.12], [0.152, 0.24], [0.18, 0.4], [0.185, 0.5], [0.15, 0.58], [0.075, 0.64], [0.065, 0.71]], 18, tunic, 0.76);
+  body.add(torso);
+  const belt = part(new THREE.TorusGeometry(0.162, 0.028, 8, 20).rotateX(Math.PI / 2), leather, 0, 0.1, 0); belt.scale.z = 0.8; body.add(belt);
+  body.add(part(new THREE.BoxGeometry(0.06, 0.055, 0.02), gold, 0, 0.1, 0.135));
+  body.add(part(new THREE.BoxGeometry(0.09, 0.1, 0.07), leatherD, 0.17, 0.02, 0.03));
 
-  const head = new THREE.Group(); head.position.set(0, 0.8, 0); body.add(head);
-  head.add(part(new THREE.SphereGeometry(0.17, 18, 14), skin));
-  const hairCap = part(new THREE.SphereGeometry(0.185, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), hair, 0, 0.012, -0.012); head.add(hairCap);
-  head.add(part(new THREE.ConeGeometry(0.07, 0.2, 6), hair, 0, 0.1, -0.17).rotateX(-1.9));     // tied tuft
-  [-0.062, 0.062].forEach((x) => head.add(part(new THREE.SphereGeometry(0.022, 8, 6), dark, x, 0.005, 0.155)));
-  head.add(part(new THREE.TorusGeometry(0.15, 0.045, 8, 16), scarfM, 0, -0.15, 0).rotateX(Math.PI / 2)); // scarf wrap
+  // capelet: lathe with a wavy hem, longer at front and back, banded with vertex colours
+  const pg = new THREE.LatheGeometry([[0.08, 0.665], [0.13, 0.63], [0.24, 0.55], [0.33, 0.45], [0.385, 0.35], [0.4, 0.3]].map(V2), 36);
+  const pp = pg.attributes.position, pc = new Float32Array(pp.count * 3);
+  const cA = new THREE.Color('#2c7479'), cB = new THREE.Color('#f0d48a'), cC = new THREE.Color('#1c4d52'), ct = new THREE.Color();
+  for (let i = 0; i < pp.count; i++) {
+    const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i), r = Math.hypot(x, z) || 1e-6, ang = Math.atan2(z, x);
+    const t = clamp((0.665 - y) / 0.365, 0, 1), rr = r * (1 + t * 0.07 * Math.sin(ang * 7));
+    const drop = t * t * (0.09 * Math.abs(Math.sin(ang)) + 0.03 * Math.sin(ang * 3 + 1));
+    pp.setXYZ(i, x / r * rr, y - drop, z / r * rr * 0.86);
+    if (t > 0.86 || (t > 0.62 && t < 0.7)) ct.copy(cB); else ct.copy(cA).lerp(cC, t * 0.6);
+    pc[i * 3] = ct.r; pc[i * 3 + 1] = ct.g; pc[i * 3 + 2] = ct.b;
+  }
+  pg.setAttribute('color', new THREE.BufferAttribute(pc, 3)); pg.computeVertexNormals();
+  const poncho = part(pg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
+  body.add(poncho);
 
-  // scarf tail: a chain of pivots trailing behind
-  const scarf = []; let parent = body, sy = 0.66, sz = -0.13;
-  for (let i = 0; i < 6; i++) {
-    const p = new THREE.Group(); p.position.set(i === 0 ? 0.05 : 0, i === 0 ? sy : 0, i === 0 ? sz : -0.2);
-    p.add(part(new THREE.BoxGeometry(0.15 - i * 0.012, 0.035, 0.21), scarfM, 0, 0, -0.1));
+  // head
+  const head = new THREE.Group(); head.position.set(0, 0.83, 0); body.add(head);
+  head.add(ball(0.165, skin, 0, 0, 0, 1, 1.06, 1.03));
+  [-1, 1].forEach((sd) => {
+    head.add(ball(0.036, skin, sd * 0.162, -0.012, 0, 0.5, 1, 0.8));
+    head.add(ball(0.027, dark, sd * 0.062, 0.012, 0.15, 1, 1.35, 0.5));
+    head.add(ball(0.008, white, sd * 0.055, 0.03, 0.165));
+    const brow = part(new THREE.BoxGeometry(0.055, 0.013, 0.012), hair, sd * 0.062, 0.064, 0.158); brow.rotation.z = -sd * 0.16; head.add(brow);
+    head.add(part(new THREE.CapsuleGeometry(0.028, 0.1, 3, 8), hair, sd * 0.152, -0.05, 0.055));
+  });
+  head.add(ball(0.022, skin, 0, -0.03, 0.166));
+  head.add(part(new THREE.SphereGeometry(0.183, 22, 14, 0, Math.PI * 2, 0, Math.PI * 0.52), hair, 0, 0.022, -0.016));
+  head.add(ball(0.155, hair, 0, -0.035, -0.065, 1.06, 1, 0.82));
+  for (let i = -2; i <= 2; i++) {
+    const b = part(new THREE.ConeGeometry(0.038, 0.1, 5), hair, i * 0.052, 0.085 - Math.abs(i) * 0.014, 0.148);
+    b.rotation.set(Math.PI + 0.35, 0, i * 0.12); head.add(b);
+  }
+  // ponytail chain
+  const tail = []; let tp = head;
+  for (let i = 0; i < 4; i++) {
+    const p = new THREE.Group(); p.position.set(0, i === 0 ? 0.05 : 0, i === 0 ? -0.18 : -0.11);
+    p.add(part(new THREE.BoxGeometry(0.075 - i * 0.013, 0.075 - i * 0.013, 0.12), hair, 0, 0, -0.055));
+    tp.add(p); tail.push(p); tp = p;
+  }
+
+  // scarf: wrap, knot and a long tail
+  const wrap = part(new THREE.TorusGeometry(0.105, 0.052, 10, 20).rotateX(Math.PI / 2), scarfM, 0, 0.69, 0.005); wrap.scale.z = 0.92; body.add(wrap);
+  body.add(ball(0.05, scarfM, 0.07, 0.67, -0.1));
+  const scarf = []; let parent = body;
+  for (let i = 0; i < 7; i++) {
+    const p = new THREE.Group(); p.position.set(i === 0 ? 0.07 : 0, i === 0 ? 0.66 : 0, i === 0 ? -0.13 : -0.19);
+    p.add(part(new THREE.BoxGeometry(0.16 - i * 0.012, 0.028, 0.2), scarfM, 0, 0, -0.1));
     parent.add(p); scarf.push(p); parent = p;
   }
 
   // sword on the back
-  const sword = new THREE.Group(); sword.position.set(-0.02, 0.38, -0.2); sword.rotation.z = 0.6;
-  sword.add(part(new THREE.BoxGeometry(0.06, 0.82, 0.03), leather, 0, 0, 0));
-  sword.add(part(new THREE.BoxGeometry(0.2, 0.035, 0.05), steel, 0, 0.43, 0));
-  sword.add(part(new THREE.CylinderGeometry(0.022, 0.022, 0.2, 6), dark, 0, 0.55, 0));
+  const sword = new THREE.Group(); sword.position.set(0, 0.4, -0.2); sword.rotation.z = 0.65;
+  sword.add(part(new THREE.BoxGeometry(0.065, 0.7, 0.035), leatherD, 0, 0, 0));
+  sword.add(part(new THREE.BoxGeometry(0.07, 0.06, 0.04), gold, 0, -0.33, 0));
+  sword.add(part(new THREE.BoxGeometry(0.21, 0.032, 0.05), steel, 0, 0.37, 0));
+  sword.add(part(new THREE.CylinderGeometry(0.02, 0.02, 0.17, 8), leatherD, 0, 0.47, 0));
+  sword.add(ball(0.03, gold, 0, 0.57, 0));
   body.add(sword);
 
-  function limb(x, y, upLen, lowLen, r, upMat, lowMat, endGeo, endMat, endZ) {
+  function limb(x, y, upLen, lowLen, up, low, deco) {
     const a = new THREE.Group(); a.position.set(x, y, 0);
-    a.add(part(new THREE.CapsuleGeometry(r, upLen - r * 2, 3, 8), upMat, 0, -upLen / 2, 0));
+    a.add(ball(up[0] * 1.04, up[2])); a.add(tube(up[0], up[1], upLen, up[2]));
     const b = new THREE.Group(); b.position.y = -upLen; a.add(b);
-    b.add(part(new THREE.CapsuleGeometry(r * 0.88, lowLen - r * 2, 3, 8), lowMat, 0, -lowLen / 2, 0));
-    b.add(part(endGeo, endMat, 0, -lowLen, endZ));
+    b.add(ball(up[1] * 1.1, up[2])); b.add(tube(low[0], low[1], lowLen, low[2]));
+    deco(b, lowLen);
     body.add(a);
     return [a, b];
   }
-  const hand = new THREE.SphereGeometry(0.055, 8, 6), foot = new THREE.BoxGeometry(0.11, 0.09, 0.24);
-  const [armL, elbowL] = limb(0.27, 0.5, 0.3, 0.27, 0.058, tunic, skin, hand, skin, 0);
-  const [armR, elbowR] = limb(-0.27, 0.5, 0.3, 0.27, 0.058, tunic, skin, hand, skin, 0);
-  const [legL, kneeL] = limb(0.1, -0.05, 0.43, 0.42, 0.075, dark, leather, foot, leather, 0.05);
-  const [legR, kneeR] = limb(-0.1, -0.05, 0.43, 0.42, 0.075, dark, leather, foot, leather, 0.05);
-  armL.rotation.z = 0.12; armR.rotation.z = -0.12;
+  const armDeco = (b, len) => {
+    b.add(part(new THREE.CylinderGeometry(0.05, 0.046, 0.13, 12), leather, 0, -len * 0.55, 0));
+    b.add(ball(0.05, skin, 0, -len - 0.03, 0, 0.85, 1.15, 0.6));
+    b.add(ball(0.019, skin, 0, -len - 0.015, 0.035));
+  };
+  const legDeco = (b, len) => {
+    b.add(part(new THREE.CylinderGeometry(0.078, 0.074, 0.055, 12), leatherD, 0, -0.03, 0));
+    b.add(part(new THREE.BoxGeometry(0.105, 0.085, 0.2), leather, 0, -len - 0.02, 0.045));
+    b.add(ball(0.056, leather, 0, -len - 0.028, 0.135, 0.95, 0.75, 1.2));
+    b.add(part(new THREE.BoxGeometry(0.112, 0.022, 0.255), leatherD, 0, -len - 0.066, 0.06));
+  };
+  const [armL, elbowL] = limb(0.215, 0.52, 0.29, 0.26, [0.064, 0.05, tunic], [0.045, 0.038, skin], armDeco);
+  const [armR, elbowR] = limb(-0.215, 0.52, 0.29, 0.26, [0.064, 0.05, tunic], [0.045, 0.038, skin], armDeco);
+  const [legL, kneeL] = limb(0.095, -0.06, 0.42, 0.4, [0.088, 0.068, dark], [0.067, 0.056, leather], legDeco);
+  const [legR, kneeR] = limb(-0.095, -0.06, 0.42, 0.4, [0.088, 0.068, dark], [0.067, 0.056, leather], legDeco);
 
-  return { root, body, head, torso, scarf, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR };
+  return { root, body, head, torso, scarf, tail, poncho, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR };
 }
 
 export class Player {
@@ -210,7 +272,7 @@ export class Player {
     r.body.rotation.z = P.tilt;
     r.body.rotation.y = Math.sin(ph) * 0.12 * Math.min(A, 1);
     r.head.rotation.x = -P.lean * 0.55; r.head.rotation.y = -r.body.rotation.y + clamp(this.turn * 0.05, -0.4, 0.4);
-    r.torso.scale.setScalar(1 + breath * 0.012);
+    r.torso.scale.set(1 + breath * 0.012, 1 + breath * 0.006, 0.76 * (1 + breath * 0.03));
 
     // scarf trails with speed and flutters
     const f = clamp(sp / 9, 0, 1), fall = clamp(-this.vel.y / 14, -0.6, 1);
@@ -220,6 +282,15 @@ export class Player {
       sg.rotation.x = (i === 0 ? lerp(-1.25, 0.1, f) - P.lean + fall * 0.9 : lerp(-0.05, 0.02, f)) + wave;
       sg.rotation.y = Math.sin(elapsed * (2 + f * 5) + i * 0.7) * (0.05 + f * 0.12) + (i === 0 ? clamp(this.turn * 0.12, -0.7, 0.7) : 0);
     }
+
+    for (let i = 0; i < r.tail.length; i++) {
+      r.tail[i].rotation.x = (i === 0 ? lerp(-1.0, 0.25, f) - P.lean * 0.5 + fall * 0.6 : 0.06) + Math.sin(elapsed * (4 + f * 6) - i * 1.1) * (0.04 + f * 0.14);
+      r.tail[i].rotation.y = Math.sin(elapsed * (3 + f * 4) + i) * (0.03 + f * 0.1);
+    }
+    // capelet lifts with speed and balloons when falling
+    const flare = 1 + f * 0.07 + Math.max(0, fall) * 0.2;
+    r.poncho.rotation.x = -P.lean * 0.3 - f * 0.1;
+    r.poncho.scale.set(flare, 1 - Math.max(0, fall) * 0.1, flare);
 
     r.root.position.copy(this.pos);
     r.root.rotation.y = this.heading;

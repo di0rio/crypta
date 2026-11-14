@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fbm, ridged, vnoise, rng, clamp, lerp, smoothstep } from './noise.js';
+import { patch, NOISE, shared } from './shade.js';
 
 export const SIZE = 1600;      // world edge in metres
 export const SEG = 400;        // terrain cells per edge (4 m each)
@@ -67,7 +68,7 @@ export function createWorld(scene) {
     col[k * 3] = tmp.r; col[k * 3 + 1] = tmp.g; col[k * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+  const terrain = new THREE.Mesh(geo, patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }), 'terrain'));
   terrain.receiveShadow = true;
   scene.add(terrain);
 
@@ -79,9 +80,56 @@ export function createWorld(scene) {
   heightTex.needsUpdate = true;
 
   // ---------- water ----------
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(SIZE * 3, SIZE * 3),
-    new THREE.MeshStandardMaterial({ color: '#2d7f9c', transparent: true, opacity: 0.8, roughness: 0.08, metalness: 0.1 }));
-  water.rotation.x = -Math.PI / 2; water.position.y = WATER;
+  // depth comes from the height texture: shallow turquoise -> deep blue, foam along the shore
+  const waterUniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+    uTop: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uAmb: { value: new THREE.Color(1, 1, 1) },
+    uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uLightCol: { value: new THREE.Color(1, 1, 1) },
+    uSize: { value: SIZE }, uN: { value: N }
+  }]);
+  waterUniforms.uHeight = { value: heightTex }; waterUniforms.uTime = shared.uTime;
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(SIZE * 3, SIZE * 3), new THREE.ShaderMaterial({
+    uniforms: waterUniforms, transparent: true, depthWrite: false, fog: true,
+    vertexShader: `
+      varying vec3 vWPos;
+      #include <fog_pars_vertex>
+      void main() {
+        vWPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec4 mvPosition = viewMatrix * vec4(vWPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: `
+      uniform sampler2D uHeight; uniform vec3 uTop, uHor, uAmb, uLightDir, uLightCol; uniform float uTime, uSize, uN;
+      varying vec3 vWPos;
+      #include <fog_pars_fragment>
+      ${NOISE}
+      float hAt(vec2 p) { vec2 uv = ((p + uSize * 0.5) / (uSize / (uN - 1.0)) + 0.5) / uN; return texture2D(uHeight, clamp(uv, 0.0, 1.0)).r; }
+      float wave(vec2 p) {
+        return wnoise(p * 0.3 + uTime * vec2(0.22, 0.1)) * 0.6 + wnoise(p * 0.85 - uTime * vec2(0.18, 0.27)) * 0.3 + wnoise(p * 2.6 + uTime * 0.45) * 0.1;
+      }
+      void main() {
+        vec2 p = vWPos.xz;
+        float e = 0.3, h0 = wave(p);
+        vec3 n = normalize(vec3(-(wave(p + vec2(e, 0.0)) - h0) / e * 0.45, 1.0, -(wave(p + vec2(0.0, e)) - h0) / e * 0.45));
+        vec3 V = normalize(cameraPosition - vWPos);
+        float fres = 0.05 + 0.9 * pow(1.0 - max(dot(n, V), 0.0), 4.0);
+        vec3 R = reflect(-V, n); R.y = abs(R.y);
+        vec3 sky = mix(uHor, uTop, pow(R.y, 0.45));
+        float depth = max(0.0, -hAt(p));
+        vec3 body = mix(vec3(0.09, 0.5, 0.48), vec3(0.015, 0.11, 0.22), 1.0 - exp(-depth * 0.22)) * uAmb;
+        vec3 col = mix(body, sky, fres);
+        float rl = max(dot(R, uLightDir), 0.0);
+        col += uLightCol * (pow(rl, 260.0) * 5.0 + pow(rl, 24.0) * 0.12);
+        float shore = 1.0 - smoothstep(0.0, 1.1, depth);
+        float lap = 0.5 + 0.5 * sin(uTime * 1.4 - depth * 7.0);
+        float foam = shore * smoothstep(0.5, 0.78, wnoise(p * 1.5 + uTime * 0.35) * 0.7 + shore * 0.45 + lap * 0.18);
+        col = mix(col, uAmb * 1.25 + uLightCol * 0.2, foam * 0.85);
+        float alpha = clamp(mix(0.25, 0.97, 1.0 - exp(-depth * 0.9)) + fres * 0.5 + foam, 0.0, 1.0);
+        gl_FragColor = vec4(col, alpha);
+        #include <fog_fragment>
+      }`
+  }));
+  water.rotation.x = -Math.PI / 2; water.position.y = WATER; water.renderOrder = 2;
   scene.add(water);
 
   // ---------- colliders (trees, pillars): circles in a hash grid ----------
@@ -106,36 +154,67 @@ export function createWorld(scene) {
   const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), eu = new THREE.Euler();
 
   // ---------- trees ----------
-  const TREES = 2600;
-  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.42, 3.4, 6).translate(0, 1.7, 0);
-  const cones = [];
-  [[2.5, 4.2, 2.6], [2.0, 3.8, 4.6], [1.45, 3.4, 6.5], [0.9, 2.8, 8.2]].forEach(([r, h, y]) => cones.push(new THREE.ConeGeometry(r, h, 7).translate(0, y + h / 2 - 1.2, 0)));
-  const leafGeo = mergeGeometries(cones);
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: '#5a4030', roughness: 1, flatShading: true }), TREES);
-  const leaves = new THREE.InstancedMesh(leafGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9, flatShading: true }), TREES);
-  const leafA = C('#2f6b3a'), leafB = C('#5d8f3a'), leafC = C('#c9a24a');
-  let nt = 0;
-  for (let tries = 0; tries < 60000 && nt < TREES; tries++) {
-    const x = (R() - 0.5) * (SIZE - 80), z = (R() - 0.5) * (SIZE - 80), h = getHeight(x, z);
-    if (h < 3.5 || h > 135 || Math.hypot(x, z) < 34) continue;
-    if (fbm(x * 0.0055, z * 0.0055, 3, 21) < 0.5 + R() * 0.08) continue;
-    getSlope(x, z, sl); if (sl.length() > 0.55) continue;
-    const s = 0.8 + R() * 1.1;
-    ps.set(x, h - 0.3, z); qt.setFromEuler(eu.set((R() - 0.5) * 0.08, R() * 6.28, (R() - 0.5) * 0.08)); sc.set(s, s * (0.9 + R() * 0.35), s);
-    m4.compose(ps, qt, sc); trunks.setMatrixAt(nt, m4); leaves.setMatrixAt(nt, m4);
-    const cr = R(); tmp.copy(leafA).lerp(leafB, R()); if (cr > 0.93) tmp.lerp(leafC, 0.8);
-    leaves.setColorAt(nt, tmp);
-    addCollider(x, z, 0.45 * s);
-    nt++;
+  // jitter by position (not by vertex index) so duplicated seam vertices stay welded
+  function organic(geo, amt) {
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const j1 = vnoise(x * 2.3 + y * 1.1, z * 2.3 - y * 0.7, 41) - 0.5, j2 = vnoise(x * 1.7 - 9, z * 1.7 + y * 1.3, 42) - 0.5;
+      p.setXYZ(i, x * (1 + j1 * amt), y + j2 * amt * 0.9, z * (1 + j1 * amt));
+    }
+    geo.computeVertexNormals();
+    return geo;
   }
-  trunks.count = leaves.count = nt;
-  trunks.castShadow = leaves.castShadow = true; leaves.receiveShadow = true;
-  trunks.instanceMatrix.needsUpdate = leaves.instanceMatrix.needsUpdate = true;
-  scene.add(trunks, leaves);
+  const trunkMat = patch(new THREE.MeshStandardMaterial({ color: '#5b4232', roughness: 1, flatShading: true }), 'plain');
+  const leafMat = patch(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, flatShading: true }), 'leaves');
+  function forest(count, trunkGeo, leafGeo, colA, colB, colC, accept) {
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count), leaves = new THREE.InstancedMesh(leafGeo, leafMat, count);
+    let n = 0;
+    for (let tries = 0; tries < count * 30 && n < count; tries++) {
+      const x = (R() - 0.5) * (SIZE - 80), z = (R() - 0.5) * (SIZE - 80), h = getHeight(x, z);
+      if (Math.hypot(x, z) < 34 || !accept(x, z, h)) continue;
+      getSlope(x, z, sl); if (sl.length() > 0.55) continue;
+      const s = 0.75 + R() * 1.15;
+      ps.set(x, h - 0.35, z); qt.setFromEuler(eu.set((R() - 0.5) * 0.1, R() * 6.28, (R() - 0.5) * 0.1)); sc.set(s, s * (0.85 + R() * 0.4), s);
+      m4.compose(ps, qt, sc); trunks.setMatrixAt(n, m4); leaves.setMatrixAt(n, m4);
+      tmp.copy(colA).lerp(colB, R()); if (R() > 0.92) tmp.lerp(colC, 0.75);
+      leaves.setColorAt(n, tmp);
+      addCollider(x, z, 0.45 * s);
+      n++;
+    }
+    trunks.count = leaves.count = n;
+    trunks.castShadow = leaves.castShadow = true; leaves.receiveShadow = true;
+    scene.add(trunks, leaves);
+  }
+  const fmask = (x, z) => fbm(x * 0.0055, z * 0.0055, 3, 21);
+  // pines: five drooping skirts
+  const pineLeaf = mergeGeometries([[2.75, 3.4, 2.0], [2.35, 3.3, 3.7], [1.9, 3.1, 5.4], [1.4, 2.9, 7.0], [0.85, 2.6, 8.5]]
+    .map(([r, h, y], i) => organic(new THREE.ConeGeometry(r, h, 9, 2).rotateY(i * 0.7).translate(0, y + h / 2, 0), 0.24)));
+  forest(2400, new THREE.CylinderGeometry(0.2, 0.45, 4.2, 7).translate(0, 2.1, 0), pineLeaf,
+    C('#2c6b3c'), C('#4f8a3c'), C('#8fa04a'), (x, z, h) => h > 3.5 && h < 140 && fmask(x, z) > 0.5 + R() * 0.08);
+  // broadleaf trees in the lowlands
+  const oakLeaf = mergeGeometries([[2.5, 0, 6.2, 0], [1.9, 1.7, 5.3, 0.6], [2.0, -1.5, 5.6, -0.8], [1.7, 0.3, 7.9, -0.3], [1.5, -0.4, 5.0, 1.6]]
+    .map(([r, x, y, z]) => organic(new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), 0.3)));
+  forest(900, organic(new THREE.CylinderGeometry(0.3, 0.6, 5.2, 7).translate(0, 2.6, 0), 0.25), oakLeaf,
+    C('#4f9440'), C('#86b045'), C('#d9a441'), (x, z, h) => h > 3.2 && h < 55 && fmask(x + 300, z - 200) > 0.52 + R() * 0.1);
+  // bushes
+  const BUSH = 2200, bushes = new THREE.InstancedMesh(organic(new THREE.IcosahedronGeometry(1, 1), 0.45), leafMat, BUSH);
+  let nb = 0;
+  for (let i = 0; nb < BUSH && i < BUSH * 20; i++) {
+    const x = (R() - 0.5) * (SIZE - 80), z = (R() - 0.5) * (SIZE - 80), h = getHeight(x, z);
+    if (h < 3 || h > 120 || Math.hypot(x, z) < 12 || fmask(x, z) < 0.43) continue;
+    const s = 0.5 + R() * 1.1;
+    ps.set(x, h + s * 0.25, z); qt.setFromEuler(eu.set(0, R() * 6.28, 0)); sc.set(s * (1 + R() * 0.5), s * 0.7, s * (1 + R() * 0.5));
+    m4.compose(ps, qt, sc); bushes.setMatrixAt(nb, m4);
+    bushes.setColorAt(nb, tmp.set('#3f7d36').lerp(tmp2.set('#7ea63f'), R()));
+    nb++;
+  }
+  bushes.count = nb; bushes.castShadow = bushes.receiveShadow = true;
+  scene.add(bushes);
 
   // ---------- rocks ----------
   const ROCKS = 900;
-  const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true }), ROCKS);
+  const rocks = new THREE.InstancedMesh(organic(new THREE.IcosahedronGeometry(1, 1), 0.5), patch(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true }), 'stone'), ROCKS);
   for (let i = 0; i < ROCKS; i++) {
     const x = (R() - 0.5) * (SIZE - 60), z = (R() - 0.5) * (SIZE - 60), h = getHeight(x, z);
     const big = R() > 0.9, s = big ? 2.5 + R() * 4 : 0.35 + R() * 1.3;
@@ -148,8 +227,8 @@ export function createWorld(scene) {
   scene.add(rocks);
 
   // ---------- ruins ----------
-  const stone = new THREE.MeshStandardMaterial({ color: '#a39c8c', roughness: 1, flatShading: true });
-  const stoneD = new THREE.MeshStandardMaterial({ color: '#7f796c', roughness: 1, flatShading: true });
+  const stone = patch(new THREE.MeshStandardMaterial({ color: '#b3ab98', roughness: 1, flatShading: true }), 'stone');
+  const stoneD = patch(new THREE.MeshStandardMaterial({ color: '#8e8778', roughness: 1, flatShading: true }), 'stone');
   const ruins = new THREE.Group(); scene.add(ruins);
   function block(w, h, d, x, y, z, ry, mat) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || stone);
@@ -213,7 +292,7 @@ export function createWorld(scene) {
   addCollider(SX, SZ, 27);
 
   return {
-    getHeight, getSlope, resolve, heightTex, N, SIZE, WATER,
+    getHeight, getSlope, resolve, heightTex, waterUniforms, N, SIZE, WATER,
     update(t) { beacon.rotation.y = t * 0.4; beacon.position.y = y + 14 + Math.sin(t * 0.8) * 1.5; }
   };
 }

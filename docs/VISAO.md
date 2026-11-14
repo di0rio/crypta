@@ -30,6 +30,16 @@ O protótipo 2D anterior (CRYPTA, pixel art co-op) foi arquivado: está no prime
 | Personagem | O andarilho: poncho, cachecol vermelho que voa com a velocidade, espada nas costas. Animação procedural: andar, correr, pular, cair, rolar, nadar, respirar parado |
 | Controle | Câmera orbital com atraso, FOV abre na corrida, fôlego (anel), rolamento, deslizar em encosta íngreme, colisão com árvores e pilares |
 
+### Passe de polimento gráfico — feito
+
+- **Superfícies**: detalhe procedural no terreno (variação, estratos de rocha, musgo em encosta) e na pedra (desgaste, veios, musgo no topo).
+- **Sombra de nuvem** passando pelo chão, pela grama e pelas árvores.
+- **Água**: cor por profundidade, reflexo do céu, brilho do sol/lua, ondulação e espuma na margem.
+- **Vegetação**: pinheiros em camadas e árvores de copa com formas orgânicas, arbustos, vento nas copas; grama com rajadas de vento, luz atravessando contra o sol, manchas secas e flores.
+- **Céu**: nuvens em duas camadas iluminadas pelo sol, disco do sol, lua com relevo, estrelas e faixa da galáxia, névoa no horizonte.
+- **Imagem final**: contraste, saturação, vinheta e grão; pólen flutuando de dia.
+- **Personagem**: remodelado com formas torneadas — capa curta com barra ondulada, rosto, cabelo com rabo que balança, botas, braçadeiras, cinto, espada com bainha.
+
 ## Próximas etapas
 
 1. **Polir o personagem** — modelo com mais forma (mãos, rosto, roupa com dobra), pés que acompanham o chão (IK), transições de animação, poeira e pegadas.

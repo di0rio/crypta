@@ -16,7 +16,7 @@ Seguir a trilha, explorar as ruínas e juntar as 16 brasas. Cada uma aumenta o f
 
 ## Controles
 
-WASD mover · mouse câmera · Shift correr · Espaço pular · Q ou botão direito rolar · roda do mouse zoom · T (segurar) acelera o tempo · setas giram a câmera
+WASD mover · mouse câmera · Shift correr · Espaço pular · Q ou botão direito rolar · roda do mouse zoom · M som · T (segurar) acelera o tempo · setas giram a câmera
 
 ## Estrutura
 
@@ -28,6 +28,8 @@ WASD mover · mouse câmera · Shift correr · Espaço pular · Q ou botão dire
 - `src/player.js` — personagem, animação procedural, controle, câmera
 - `src/shade.js` — ruído e detalhe de superfície compartilhados entre shaders
 - `src/quest.js` — brasas (objetivo) 
+- `src/audio.js` — som procedural (WebAudio)
+- `src/fx.js` — partículas
 - `src/noise.js` — ruído e RNG com seed
 - `docs/VISAO.md` — direção do jogo e próximas etapas
 

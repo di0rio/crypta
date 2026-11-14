@@ -12,6 +12,8 @@ import { createGrass } from './grass.js';
 import { Player } from './player.js';
 import { shared } from './shade.js';
 import { createQuest } from './quest.js';
+import { createAudio } from './audio.js';
+import { createFx } from './fx.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -28,6 +30,7 @@ const world = createWorld(scene);
 const sky = new Sky(scene);
 const grass = createGrass(scene, world, sky);
 const player = new Player(scene, world, camera, canvas);
+const audio = createAudio(), fx = createFx(scene);
 
 // water reads the same sky colours and light as everything else
 const wu = world.waterUniforms;
@@ -68,7 +71,8 @@ composer.addPass(grade);
 
 function resize() {
   const w = innerWidth, h = innerHeight;
-  renderer.setSize(w, h, false); composer.setSize(w, h);
+  renderer.setSize(w, h, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h);
+  fx.setScale(h * renderer.getPixelRatio() / (2 * Math.tan(camera.fov * Math.PI / 360)));
   camera.aspect = w / h; camera.updateProjectionMatrix();
   tiltH.uniforms.h.value = 2.2 / w; tiltV.uniforms.v.value = 2.2 / h;
 }
@@ -81,11 +85,29 @@ let toastT = 0;
 const quest = createQuest(scene, world, player, {
   set(n, total, flash) { embersEl.textContent = 'BRASAS ' + n + ' / ' + total; if (flash) { embersEl.classList.remove('flash'); void embersEl.offsetWidth; embersEl.classList.add('flash'); } },
   say(text) { toast.textContent = text; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 4200); }
-});
+}, (e, n, all) => { audio.ember(n, all); fx.sparks(e.x, e.y, e.z); save(); });
+
+// ---------- save (this browser only) ----------
+const SAVE = 'ermo.save.v1';
+function save() {
+  try { localStorage.setItem(SAVE, JSON.stringify({ taken: quest.takenIdx(), x: player.pos.x, z: player.pos.z, time: sky.time, yaw: player.yaw })); } catch (e) {}
+}
+try {
+  const d = JSON.parse(localStorage.getItem(SAVE) || 'null');
+  if (d && isFinite(d.x) && isFinite(d.z)) {
+    quest.restore(d.taken);
+    player.pos.set(d.x, world.getHeight(d.x, d.z) + 0.5, d.z); player.camTarget.copy(player.pos);
+    if (isFinite(d.time)) sky.time = d.time; if (isFinite(d.yaw)) player.yaw = d.yaw;
+    $('reset').classList.remove('hidden');
+  }
+} catch (e) {}
+$('reset').addEventListener('click', () => { try { localStorage.removeItem(SAVE); } catch (e) {} location.reload(); });
+setInterval(() => { if (player.active) save(); }, 5000);
+addEventListener('keydown', (e) => { if (e.code === 'KeyM') audio.toggleMute(); });
 const start = $('start'), hud = $('hud'), clock = $('clock'), stam = $('stamina'), arc = $('stamina-arc'), hint = $('hint');
 $('loading').textContent = '';
 $('enter').addEventListener('click', () => {
-  start.classList.add('out'); hud.classList.remove('hidden'); player.active = true;
+  start.classList.add('out'); hud.classList.remove('hidden'); player.active = true; audio.init();
   const lock = canvas.requestPointerLock && canvas.requestPointerLock();
   if (lock && lock.catch) lock.catch(() => {});
   setTimeout(() => hint.classList.add('fade'), 14000);
@@ -93,15 +115,42 @@ $('enter').addEventListener('click', () => {
 
 // ---------- loop ----------
 const timer = new THREE.Clock();
-let elapsed = 0, uiT = 0;
-function sim(dt) { elapsed += dt; player.update(dt, elapsed); quest.update(dt, elapsed); }
+let elapsed = 0, uiT = 0, fpsAcc = 0, fpsN = 0;
+const prMax = Math.min(devicePixelRatio, 1.5); let pr = prMax;
+function sim(dt) {
+  elapsed += dt; player.update(dt, elapsed); quest.update(dt, elapsed);
+  for (const ev of player.events) {
+    const p = player.pos, wet = p.y < world.WATER + 0.25, dirt = world.trailDist(p.x, p.z) < 2.6, soil = dirt ? '#d9bf94' : '#b9dc8a';
+    if (ev === 'step' || ev === 'stepRun') {
+      audio.step(wet ? 'water' : dirt ? 'dirt' : 'grass', ev === 'stepRun');
+      if (wet) fx.splash(p); else if (dirt) fx.dust(p, soil, ev === 'stepRun' ? 3 : 1, 1); else if (ev === 'stepRun') fx.dust(p, soil, 2, 0.8);
+    } else if (ev === 'jump') { audio.jump(); fx.dust(p, soil, 4, 1.2); }
+    else if (ev === 'land') { audio.land(); if (wet) fx.splash(p); else fx.ring(p, soil); }
+    else if (ev === 'roll') { audio.roll(); fx.dust(p, soil, 6, 1.5); }
+    else if (ev === 'swim') { audio.swim(); fx.splash(p); }
+  }
+  player.events.length = 0;
+  fx.update(dt);
+}
 function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(timer.getDelta(), 0.05);
+  const raw = timer.getDelta(), dt = Math.min(raw, 0.05);
+  // adaptive resolution: drop the pixel ratio when the frame rate sags, raise it back when there is room
+  if (player.active && !document.hidden) {
+    fpsAcc += raw; fpsN++;
+    if (fpsAcc >= 2) {
+      const avg = fpsAcc / fpsN, was = pr;
+      if (avg > 1 / 38 && pr > 0.6) pr = Math.max(0.6, pr - 0.15); else if (avg < 1 / 57 && pr < prMax) pr = Math.min(prMax, pr + 0.1);
+      if (pr !== was) { renderer.setPixelRatio(pr); resize(); }
+      fpsAcc = fpsN = 0;
+    }
+  }
   if (!player.active) player.yaw += dt * 0.05;                       // slow orbit behind the title
   sim(dt);
   sky.update(dt, player.pos, camera.position, elapsed, player.keys.KeyT ? 60 : 1);
   shared.uTime.value = elapsed; shared.uCloud.value = sky.dayF;
+  shared.uFocus.value[0] = player.pos.x; shared.uFocus.value[1] = player.pos.y + 1.6; shared.uFocus.value[2] = player.pos.z;
+  audio.update(dt, Math.hypot(player.vel.x, player.vel.z), sky.night, elapsed);
   world.update(elapsed, sky.night);
   grass.update(player.pos);
   bloom.strength = 0.3 + sky.night * 0.35;

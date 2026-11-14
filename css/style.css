@@ -40,3 +40,7 @@ html, body { height: 100%; overflow: hidden; background: #05070d; color: #f2ede2
   letter-spacing: .12em; text-shadow: 0 2px 14px rgba(0,0,0,.7); opacity: 0; transition: opacity .8s; white-space: nowrap; }
 #toast.show { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { #embers.flash { animation: none; } }
+
+#reset { background: none; border: 0; color: inherit; font: inherit; font-size: 12px; letter-spacing: .3em; text-transform: uppercase;
+  opacity: .6; cursor: pointer; padding: 8px 12px; }
+#reset:hover, #reset:focus-visible { opacity: 1; text-decoration: underline; outline: none; }

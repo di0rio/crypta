@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ERMO</title>
-<link rel="stylesheet" href="css/style.css?v=3">
+<link rel="stylesheet" href="css/style.css?v=4">
 <script type="importmap">
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -23,16 +23,17 @@
     <circle class="bg" cx="30" cy="30" r="24"/>
     <circle class="fg" id="stamina-arc" cx="30" cy="30" r="24"/>
   </svg>
-  <div id="hint">WASD mover · mouse câmera · Shift correr · Espaço pular · Q rolar · T acelerar o tempo</div>
+  <div id="hint">WASD mover · mouse câmera · Shift correr · Espaço pular · Q rolar · roda zoom · M som · T acelerar o tempo</div>
 </div>
 
 <div id="start">
   <h1>ERMO</h1>
   <p class="sub">um mundo antigo, aberto, em silêncio</p>
   <button id="enter">entrar</button>
+  <button id="reset" class="hidden">novo jogo</button>
   <p id="loading">gerando o mundo…</p>
 </div>
 
-<script type="module" src="src/main.js?v=3"></script>
+<script type="module" src="src/main.js?v=4"></script>
 </body>
 </html>

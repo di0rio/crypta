@@ -1,7 +1,7 @@
 // Shared GLSL + material patches: procedural surface detail, moss, wind and moving cloud shadows.
 // Everything is driven by world position, so terrain, stone, trees and grass agree with each other.
 
-export const shared = { uTime: { value: 0 }, uCloud: { value: 1 } };
+export const shared = { uTime: { value: 0 }, uCloud: { value: 1 }, uFocus: { value: new Float32Array(3) } };
 
 export const NOISE = /* glsl */`
 float whash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -38,6 +38,16 @@ const WIND = /* glsl */`
 
 const CLOUD = 'diffuseColor.rgb *= 1.0 - 0.5 * uCloud * cloudShadow(vWPos.xz, uTime);';
 
+// keep the wanderer visible: dither away whatever stands between the camera and the focus point
+const SEE = /* glsl */`
+    { vec3 ro = cameraPosition, rd = uFocus - ro; float L = length(rd); rd /= L;
+      float tt = dot(vWPos - ro, rd);
+      if (tt > 0.0 && tt < L - 1.0) {
+        float cut = 1.0 - smoothstep(1.5, 3.4, length(vWPos - (ro + rd * tt)));
+        if (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) < cut * 0.94) discard;
+      } }
+`;
+
 const FRAG = {
   terrain: /* glsl */`
     float tn1 = wfbm(vWPos.xz * 0.3), tn2 = wnoise(vWPos.xz * 2.1), tn3 = wfbm(vWPos.xz * 0.035);
@@ -63,14 +73,14 @@ const FRAG = {
 
 export function patch(material, kind) {
   material.onBeforeCompile = (sh) => {
-    sh.uniforms.uTime = shared.uTime; sh.uniforms.uCloud = shared.uCloud;
+    sh.uniforms.uTime = shared.uTime; sh.uniforms.uCloud = shared.uCloud; sh.uniforms.uFocus = shared.uFocus;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\n' + HEAD)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n vLY = position.y;\n' + (kind === 'leaves' ? WIND : ''))
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + WPOS);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + HEAD + ' uniform float uCloud;\n' + NOISE)
-      .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG[kind]);
+      .replace('#include <common>', '#include <common>\n' + HEAD + ' uniform float uCloud; uniform vec3 uFocus;\n' + NOISE)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + (kind === 'terrain' ? '' : SEE) + FRAG[kind]);
   };
   material.customProgramCacheKey = () => 'ermo-' + kind;
   return material;

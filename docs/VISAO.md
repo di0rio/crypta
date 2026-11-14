@@ -61,6 +61,15 @@ Linguagem visual de maquete em miniatura: 3D estilizado, formas arredondadas, lu
 
 Andar 6,2 m/s, correr 10,5 m/s com gasto de fôlego, pulo de 1,75 m, rolamento de 6,7 m, nado, colisão com altar, limite do mundo, encosta íngreme empurra de volta, coleta de brasa. Sem valores inválidos.
 
+### Som e sensação — feito
+
+- **Som procedural** (sem arquivos): vento que cresce com a velocidade, grilos à noite, passos diferentes em grama, terra e água, pulo, pouso, rolamento, braçada, acorde ao pegar brasa. Tecla M silencia.
+- **Partículas**: poeira nos passos e no rolamento, anel de poeira no pouso, respingo na água, faíscas ao pegar brasa.
+- **Guia**: feixe de luz sobre cada brasa e seta no chão apontando a mais próxima.
+- **Progresso salvo** neste navegador (brasas, posição, hora). "Novo jogo" na tela inicial.
+- **Personagem sempre visível**: árvores, pedras e ruínas entre a câmera e ele ficam vazadas.
+- **Resolução adaptativa**: baixa sozinha se o quadro cair, sobe de volta quando sobra.
+
 ## Próximas etapas
 
 1. **Polir o personagem** — modelo com mais forma (mãos, rosto, roupa com dobra), pés que acompanham o chão (IK), transições de animação, poeira e pegadas.

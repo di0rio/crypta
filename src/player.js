@@ -143,7 +143,7 @@ export class Player {
     this.roll = 0; this.phase = 0; this.airT = 0; this.land = 0;
     this.yaw = 0; this.pitch = 0.52; this.dist = 18; this.fov = 30;
     this.camTarget = this.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
-    this.keys = {}; this.active = false;
+    this.keys = {}; this.active = false; this.events = []; this.stepN = 0;
     this._sl = new THREE.Vector2(); this._v = new THREE.Vector3();
     this.pose = { legL: 0, legR: 0, kneeL: 0, kneeR: 0, armL: 0, armR: 0, elbowL: 0, elbowR: 0, armZ: 0.12, lean: 0, bob: 0, tilt: 0 };
 
@@ -185,7 +185,7 @@ export class Player {
 
     // roll
     if (this.active && (k.KeyQ || k.Roll) && this.roll <= 0 && this.grounded && !this.swim && this.stamina > 18) {
-      this.roll = 0.6; this.stamina -= 18; this.staminaWait = 0.9;
+      this.roll = 0.6; this.stamina -= 18; this.staminaWait = 0.9; this.events.push('roll');
       if (il > 0) this.heading = Math.atan2(wx, wz);
     }
     k.Roll = false;
@@ -206,7 +206,7 @@ export class Player {
     if (this.grounded && steep > 1.0) { const f = (steep - 1.0) * 22 * dt; v.x -= this._sl.x / steep * f; v.z -= this._sl.y / steep * f; }
 
     // jump + gravity
-    if (this.active && k.Space && this.grounded && this.roll <= 0 && !this.swim) { v.y = 10.5; this.grounded = false; }
+    if (this.active && k.Space && this.grounded && this.roll <= 0 && !this.swim) { v.y = 10.5; this.grounded = false; this.events.push('jump'); }
     v.y -= 30 * dt;
     p.x += v.x * dt; p.z += v.z * dt; p.y += v.y * dt;
     const lim = w.SIZE / 2 - 12; p.x = clamp(p.x, -lim, lim); p.z = clamp(p.z, -lim, lim);
@@ -215,6 +215,7 @@ export class Player {
     const g2 = w.getHeight(p.x, p.z), floorY = Math.max(g2, w.WATER - 1.15);
     const wasAir = !this.grounded;
     if (p.y <= floorY + (this.grounded ? 0.35 : 0)) {
+      if (wasAir && this.airT > 0.12) this.events.push('land');
       if (wasAir && v.y < -9) this.land = 0.22;
       p.y = floorY; v.y = 0; this.grounded = true; this.airT = 0;
     } else { this.grounded = false; this.airT += dt; }
@@ -234,6 +235,11 @@ export class Player {
   animate(dt, elapsed, sp, sprint) {
     const r = this.rig, P = this.pose, A = clamp(sp / 6.2, 0, 1.25);
     this.phase += dt * (sp > 0.3 ? 5.5 + sp * 0.75 : 0);
+    const stepN = Math.floor(this.phase / Math.PI);        // one footfall per half cycle
+    if (stepN !== this.stepN) {
+      this.stepN = stepN;
+      if (sp > 1 && this.roll <= 0 && (this.grounded || this.swim)) this.events.push(this.swim ? 'swim' : sprint ? 'stepRun' : 'step');
+    }
     const ph = this.phase, s = Math.sin(ph), c = Math.cos(ph);
     let t = { legL: 0, legR: 0, kneeL: 0.04, kneeR: 0.04, armL: 0, armR: 0, elbowL: -0.15, elbowR: -0.15, armZ: 0.12, lean: 0, bob: 0, tilt: 0 };
     const breath = Math.sin(elapsed * 1.6);
@@ -252,7 +258,7 @@ export class Player {
       const amp = Math.min(A, 1) * (sprint ? 1.15 : 0.85);
       t.legL = -s * amp; t.legR = s * amp;
       t.kneeL = (0.15 + Math.max(0, c) * 1.25) * amp; t.kneeR = (0.15 + Math.max(0, -c) * 1.25) * amp;
-      t.armL = s * amp * 0.9; t.armR = -s * amp * 0.9;
+      t.armL = s * amp * 0.62; t.armR = -s * amp * 0.62; t.armZ = 0.12 + amp * 0.24;
       t.elbowL = t.elbowR = -(0.35 + amp * 0.75);
       t.lean = amp * (sprint ? 0.34 : 0.2);
       t.bob = Math.abs(c) * 0.07 * amp - 0.03 * amp;

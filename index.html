@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ERMO</title>
-<link rel="stylesheet" href="css/style.css?v=8">
+<link rel="stylesheet" href="css/style.css?v=10">
 <script type="importmap">
 {"imports":{
   "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -21,6 +22,7 @@
   <div id="hp" aria-label="vida"></div>
   <div id="boss" class="hidden"><span>O COLOSSO</span><div><i id="boss-bar"></i></div></div>
   <div id="toast"></div>
+  <button id="net" class="hidden" title="copiar link da sala"></button>
   <svg id="stamina" viewBox="0 0 60 60" aria-hidden="true">
     <circle class="bg" cx="30" cy="30" r="24"/>
     <circle class="fg" id="stamina-arc" cx="30" cy="30" r="24"/>
@@ -39,11 +41,18 @@
 <div id="start">
   <h1>ERMO</h1>
   <p class="sub">um mundo antigo, aberto, em silêncio</p>
-  <button id="enter">entrar</button>
-  <button id="reset" class="hidden">novo jogo</button>
-  <p id="loading">gerando o mundo…</p>
+  <div id="menu-main">
+    <button id="enter">jogar</button>
+    <button id="btn-host" class="ghost">criar sala</button>
+    <div id="join-row"><input id="join-code" maxlength="5" placeholder="CÓDIGO" autocomplete="off" aria-label="código da sala"><button id="btn-join" class="ghost">entrar na sala</button></div>
+    <button id="btn-look" class="ghost">personagem</button>
+    <button id="reset" class="hidden">novo jogo</button>
+    <p id="net-menu"></p>
+    <p id="loading">gerando o mundo…</p>
+  </div>
+  <div id="look-panel" class="hidden"></div>
 </div>
 
-<script type="module" src="src/main.js?v=8"></script>
+<script type="module" src="game/main.js"></script>
 </body>
 </html>

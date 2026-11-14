@@ -23,7 +23,9 @@ function lathe(pts, seg, material, sz) {
 const tube = (r0, r1, len, material) => part(new THREE.CylinderGeometry(r0, r1, len, 12), material, 0, -len / 2, 0);
 const ball = (r, material, x, y, z, sx, sy, sz) => { const m = part(new THREE.SphereGeometry(r, 14, 10), material, x, y, z); if (sx) m.scale.set(sx, sy, sz); return m; };
 
-function buildCharacter() {
+export const DEFAULT_LOOK = { skin: '#e3b38d', hair: '#2b1b15', tunic: '#efe6cf', cape: '#2c7479', trim: '#f0d48a', scarf: '#d8392e', tail: 1, hat: 0 };
+
+export function buildCharacter() {
   const DS = { side: THREE.DoubleSide };
   const skin = mat('#e3b38d', { roughness: 0.7 }), tunic = mat('#efe6cf'), tunicD = mat('#e2d6b8', DS), dark = mat('#352c3d'),
     hair = mat('#2b1b15', { roughness: 0.55 }), scarfM = mat('#d8392e'), leather = mat('#7b5231'), leatherD = mat('#55371f'),
@@ -46,12 +48,14 @@ function buildCharacter() {
   const pg = new THREE.LatheGeometry([[0.08, 0.665], [0.13, 0.63], [0.24, 0.55], [0.33, 0.45], [0.385, 0.35], [0.4, 0.3]].map(V2), 36);
   const pp = pg.attributes.position, pc = new Float32Array(pp.count * 3);
   const cA = new THREE.Color('#2c7479'), cB = new THREE.Color('#f0d48a'), cC = new THREE.Color('#1c4d52'), ct = new THREE.Color();
+  const capeT = new Float32Array(pp.count), capeBand = new Uint8Array(pp.count);
   for (let i = 0; i < pp.count; i++) {
     const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i), r = Math.hypot(x, z) || 1e-6, ang = Math.atan2(z, x);
     const t = clamp((0.665 - y) / 0.365, 0, 1), rr = r * (1 + t * 0.07 * Math.sin(ang * 7));
     const drop = t * t * (0.09 * Math.abs(Math.sin(ang)) + 0.03 * Math.sin(ang * 3 + 1));
     pp.setXYZ(i, x / r * rr, y - drop, z / r * rr * 0.86);
-    if (t > 0.86 || (t > 0.62 && t < 0.7)) ct.copy(cB); else ct.copy(cA).lerp(cC, t * 0.6);
+    capeT[i] = t; capeBand[i] = (t > 0.86 || (t > 0.62 && t < 0.7)) ? 1 : 0;
+    if (capeBand[i]) ct.copy(cB); else ct.copy(cA).lerp(cC, t * 0.6);
     pc[i * 3] = ct.r; pc[i * 3 + 1] = ct.g; pc[i * 3 + 2] = ct.b;
   }
   pg.setAttribute('color', new THREE.BufferAttribute(pc, 3)); pg.computeVertexNormals();
@@ -76,6 +80,12 @@ function buildCharacter() {
     const b = part(new THREE.ConeGeometry(0.038, 0.1, 5), hair, i * 0.052, 0.085 - Math.abs(i) * 0.014, 0.148);
     b.rotation.set(Math.PI + 0.35, 0, i * 0.12); head.add(b);
   }
+  // optional straw hat
+  const straw = mat('#d8b96a');
+  const hat = new THREE.Group(); hat.position.set(0, 0.14, -0.01); hat.rotation.x = -0.14;
+  hat.add(part(new THREE.CylinderGeometry(0.36, 0.38, 0.022, 22), straw), part(new THREE.CylinderGeometry(0.12, 0.185, 0.14, 16), straw, 0, 0.075, 0), part(new THREE.CylinderGeometry(0.19, 0.19, 0.035, 16), scarfM, 0, 0.03, 0));
+  head.add(hat); hat.visible = false;
+
   // ponytail chain
   const tail = []; let tp = head;
   for (let i = 0; i < 4; i++) {
@@ -134,7 +144,17 @@ function buildCharacter() {
     part(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 8).rotateX(Math.PI / 2), leatherD, 0, 0, -0.03));
   elbowR.add(blade); blade.visible = false;
 
-  return { root, body, head, torso, scarf, tail, poncho, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR, blade, sheath: sword };
+  // recolour and restyle: this is what makes each wanderer their own
+  function setLook(L) {
+    skin.color.set(L.skin); hair.color.set(L.hair); tunic.color.set(L.tunic); tunicD.color.set(L.tunic).multiplyScalar(0.92); scarfM.color.set(L.scarf);
+    cA.set(L.cape); cC.copy(cA).multiplyScalar(0.6); cB.set(L.trim);
+    const col = pg.attributes.color;
+    for (let i = 0; i < col.count; i++) { if (capeBand[i]) ct.copy(cB); else ct.copy(cA).lerp(cC, capeT[i] * 0.6); col.setXYZ(i, ct.r, ct.g, ct.b); }
+    col.needsUpdate = true;
+    tail[0].visible = !!L.tail; hat.visible = !!L.hat;
+  }
+
+  return { root, body, head, torso, scarf, tail, poncho, armL, armR, elbowL, elbowR, legL, legR, kneeL, kneeR, blade, sheath: sword, setLook };
 }
 
 export class Player {
@@ -188,7 +208,7 @@ export class Player {
     this.atkBuf -= dt; if (this.atk > -1) this.atk -= dt;
     if (this.active && this.dead <= 0 && (k.Attack || k.KeyJ || k.KeyF)) this.atkBuf = 0.2;
     k.Attack = false;
-    if (this.atkBuf > 0 && this.atk <= 0.1 && this.roll <= 0 && !this.swim && !this.climb) {
+    if (this.atkBuf > 0 && this.atk <= 0.02 && this.roll <= 0 && !this.swim && !this.climb) {
       this.atkBuf = 0; this.atkN = this.atk > -0.3 ? (this.atkN + 1) % 3 : 0; this.atk = 0.3; this.atkId++;
       if (il > 0) this.heading = Math.atan2(wx, wz);
       v.x += Math.sin(this.heading) * 4.5; v.z += Math.cos(this.heading) * 4.5;
@@ -303,6 +323,13 @@ export class Player {
 
     this.animate(dt, elapsed, sp, wantSprint);
     this.updateCamera(dt, wantSprint);
+  }
+
+  // compact state for other players
+  netState() {
+    const p = this.pos, r = (v) => Math.round(v * 100) / 100;
+    const f = (this.grounded ? 1 : 0) | (this.swim ? 2 : 0) | (this.roll > 0 ? 4 : 0) | (this.climb ? 8 : 0) | ((this.keys.ShiftLeft || this.keys.ShiftRight) ? 16 : 0) | (this.dead > 0 ? 32 : 0);
+    return [r(p.x), r(p.y), r(p.z), r(this.heading), r(Math.hypot(this.vel.x, this.vel.z)), f, this.atkId, this.atkN, r(this.vel.y)];
   }
 
   // returns true if the blow landed (rolling and recent hits make the wanderer untouchable)
@@ -427,4 +454,33 @@ export class Player {
     this.fov += ((sprint ? 33 : 30) - this.fov) * (1 - Math.exp(-4 * dt));
     if (Math.abs(cam.fov - this.fov) > 0.01) { cam.fov = this.fov; cam.updateProjectionMatrix(); }
   }
+}
+
+// Another player's wanderer: same rig and the same procedural animation, driven by network state.
+export function createRemote(scene) {
+  const o = Object.create(Player.prototype);
+  Object.assign(o, {
+    rig: buildCharacter(), pos: new THREE.Vector3(), vel: new THREE.Vector3(), heading: 0, turn: 0, grounded: true, swim: false, roll: 0, phase: 0, airT: 0, land: 0, climb: null,
+    events: [], stepN: 0, squash: 0, squashV: 0, atk: -1, atkN: 0, atkSeen: -1, inv: 0, hurtT: 0, dead: 0, tx: 0, ty: 0, tz: 0, th: 0, sp: 0, sprint: false, seen: 0,
+    pose: { legL: 0, legR: 0, kneeL: 0, kneeR: 0, armL: 0, armR: 0, elbowL: 0, elbowR: 0, armZ: 0.12, lean: 0, bob: 0, tilt: 0 }
+  });
+  scene.add(o.rig.root);
+  o.apply = (s) => {
+    o.tx = s[0]; o.ty = s[1]; o.tz = s[2]; o.th = s[3]; o.sp = s[4];
+    const f = s[5]; o.grounded = !!(f & 1); o.swim = !!(f & 2); o.roll = (f & 4) ? Math.max(o.roll, 0.25) : 0; o.climb = (f & 8) ? {} : null; o.sprint = !!(f & 16); o.dead = (f & 32) ? 1 : 0;
+    if (o.atkSeen === -1) o.atkSeen = s[6]; else if (s[6] !== o.atkSeen) { o.atkSeen = s[6]; o.atk = 0.3; o.atkN = s[7]; }
+    o.vel.y = s[8];
+    if (!o.seen) { o.pos.set(o.tx, o.ty, o.tz); o.heading = o.th; }
+    o.seen = performance.now();
+  };
+  o.tick = (dt, elapsed) => {
+    const k = 1 - Math.exp(-14 * dt);
+    o.pos.x += (o.tx - o.pos.x) * k; o.pos.y += (o.ty - o.pos.y) * k; o.pos.z += (o.tz - o.pos.z) * k;
+    o.heading = dampAngle(o.heading, o.th, k);
+    if (o.atk > -1) o.atk -= dt; if (o.roll > 0) o.roll -= dt;
+    o.airT = o.grounded ? 0 : o.airT + dt;
+    o.animate(dt, elapsed, o.sp, o.sprint); o.events.length = 0;
+  };
+  o.dispose = () => scene.remove(o.rig.root);
+  return o;
 }

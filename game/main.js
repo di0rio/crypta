@@ -9,7 +9,9 @@ import { VerticalTiltShiftShader } from 'three/addons/shaders/VerticalTiltShiftS
 import { createWorld } from './world.js';
 import { Sky } from './sky.js';
 import { createGrass } from './grass.js';
-import { Player } from './player.js';
+import { Player, createRemote, DEFAULT_LOOK } from './player.js';
+import { createLookPanel } from './menu.js';
+import { createNet } from './net.js';
 import { shared } from './shade.js';
 import { createQuest } from './quest.js';
 import { createAudio } from './audio.js';
@@ -89,7 +91,7 @@ let toastT = 0;
 const quest = createQuest(scene, world, player, {
   set(n, total, flash) { embersEl.textContent = 'BRASAS ' + n + ' / ' + total; if (flash) { embersEl.classList.remove('flash'); void embersEl.offsetWidth; embersEl.classList.add('flash'); } },
   say(text) { toast.textContent = text; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 4200); }
-}, (e, n, all) => { audio.ember(n, all); fx.sparks(e.x, e.y, e.z); freeze = 0.07; flash = 1; player.shake = Math.max(player.shake, 0.12); player.squashV = 3; save(); });
+}, (e, n, all) => { audio.ember(n, all); fx.sparks(e.x, e.y, e.z); freeze = 0.07; flash = 1; player.shake = Math.max(player.shake, 0.12); player.squashV = 3; save(); if (net.active && !applyingRemote) net.send({ t: 'ember', i: e.i }); });
 
 // ---------- combat, boss, life and death ----------
 const hpEl = $('hp'), bossEl = $('boss'), bossBar = $('boss-bar'), fadeEl = $('fade'), winEl = $('win');
@@ -123,6 +125,46 @@ function respawn() {
   combat.reset(); boss.reset(); say('Você desperta junto à luz.');
 }
 
+// ---------- look (customisation) ----------
+const LOOK = 'ermo.look.v1';
+const look = Object.assign({}, DEFAULT_LOOK);
+try { Object.assign(look, JSON.parse(localStorage.getItem(LOOK) || '{}')); } catch (e) {}
+player.rig.setLook(look);
+function lookChanged() {
+  player.rig.setLook(look);
+  try { localStorage.setItem(LOOK, JSON.stringify(look)); } catch (e) {}
+  if (net.active) net.send({ t: 'look', look });
+}
+
+// ---------- online ----------
+const remotes = new Map(), netEl = $('net');
+let applyingRemote = false;
+function remote(id) {
+  let r = remotes.get(id);
+  if (!r) { r = createRemote(scene); remotes.set(id, r); net.send({ t: 'look', look }); say('Outro andarilho chegou.'); }
+  return r;
+}
+const net = createNet({
+  status(text) { netEl.textContent = text; netEl.classList.remove('hidden'); $('net-menu').textContent = text; },
+  state(id, s) { remote(id).apply(s); },
+  look(id, L) { remote(id).rig.setLook(Object.assign({}, DEFAULT_LOOK, L)); },
+  ember(i) { applyingRemote = true; quest.takeRemote(i); applyingRemote = false; },
+  hello(d) { applyingRemote = true; (d.taken || []).forEach((i) => quest.takeRemote(i)); applyingRemote = false; if (isFinite(d.v)) sky.time = d.v; },
+  time(v) { if (!net.host && isFinite(v) && Math.abs(v - sky.time) > 0.004) sky.time = v; },
+  leave(id) { const r = remotes.get(id); if (r) { r.dispose(); remotes.delete(id); say('Um andarilho partiu.'); } },
+  leaveAll() { remotes.forEach((r) => r.dispose()); remotes.clear(); },
+  taken() { return quest.takenIdx(); },
+  now() { return sky.time; },
+  joined() { net.send({ t: 'look', look }); }
+});
+setInterval(() => { if (net.active && net.peers) net.send({ t: 's', s: player.netState() }); }, 66);
+setInterval(() => { if (net.active && net.host && net.peers) net.send({ t: 'time', v: sky.time }); }, 3000);
+netEl.addEventListener('click', () => {
+  if (!net.code) return;
+  const url = location.origin + location.pathname + '?sala=' + net.code;
+  if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => say('Link da sala copiado.'), () => say(url)); else say(url);
+});
+
 // ---------- save (this browser only) ----------
 const SAVE = 'ermo.save.v1';
 function save() {
@@ -142,6 +184,21 @@ setInterval(() => { if (player.active) save(); }, 5000);
 addEventListener('keydown', (e) => { if (e.code === 'KeyM') audio.toggleMute(); });
 const start = $('start'), hud = $('hud'), clock = $('clock'), stam = $('stamina'), arc = $('stamina-arc'), hint = $('hint');
 $('loading').textContent = '';
+// start menu: solo, host, join, character
+const lookPanel = $('look-panel'), menuMain = $('menu-main'), joinCode = $('join-code');
+$('btn-look').addEventListener('click', () => {
+  menuMain.classList.add('hidden'); lookPanel.classList.remove('hidden'); start.classList.add('custom');
+  player.distT = 8; player.pitch = 0.3;
+  createLookPanel(lookPanel, look, lookChanged, () => { lookPanel.classList.add('hidden'); menuMain.classList.remove('hidden'); start.classList.remove('custom'); player.distT = 18; player.pitch = 0.52; });
+});
+$('btn-host').addEventListener('click', () => { net.host_(); $('enter').click(); });
+$('btn-join').addEventListener('click', () => { if (!joinCode.value.trim()) { joinCode.focus(); return; } net.join(joinCode.value); $('enter').click(); });
+joinCode.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('btn-join').click(); });
+joinCode.addEventListener('keyup', (e) => e.stopPropagation());
+const sala = new URLSearchParams(location.search).get('sala');
+if (sala) joinCode.value = sala.toUpperCase().slice(0, 5);
+if (!net.available()) { $('btn-host').disabled = true; $('btn-join').disabled = true; $('net-menu').textContent = 'online indisponível (sem internet?)'; }
+
 $('enter').addEventListener('click', () => {
   start.classList.add('out'); hud.classList.remove('hidden'); player.active = true; audio.init();
   const lock = canvas.requestPointerLock && canvas.requestPointerLock();
@@ -194,6 +251,7 @@ function frame() {
   // hit-stop: a few frames of near-freeze when an ember lands
   if (freeze > 0) { freeze -= raw; sim(dt * 0.06); } else sim(dt);
   flash *= Math.exp(-5 * dt);
+  remotes.forEach((r, id) => { r.tick(dt, elapsed); if (performance.now() - r.seen > 8000) { r.dispose(); remotes.delete(id); } });
   if (world.pollLit()) {                                           // a lit lantern is a place to come back to
     audio.lamp();
     let bi = -1, bd = 1e9; world.lampSpots.forEach((l, i) => { const d = Math.hypot(l[0] - player.pos.x, l[1] - player.pos.z); if (d < bd) { bd = d; bi = i; } });
@@ -232,7 +290,7 @@ frame();
 
 // console helpers: ERMO.time(0.8) for dusk, ERMO.go(x, z) to teleport
 window.ERMO = {
-  player, sky, world, renderer, scene, quest, combat, boss, stats, checkpoint,
+  player, sky, world, renderer, scene, quest, combat, boss, stats, checkpoint, net, remotes, look,
   step(n, dt) { for (let i = 0; i < n; i++) sim(dt || 1 / 60); },
   time(t) { sky.time = t; },
   go(x, z) { player.pos.set(x, world.getHeight(x, z) + 1, z); player.vel.set(0, 0, 0); player.camTarget.copy(player.pos); },

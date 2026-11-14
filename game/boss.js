@@ -30,7 +30,7 @@ export function createBoss(scene, world, player, fx, audio, ui, quest) {
   const arm = (s) => { const sh = grp(torso, s * 3.9, 4.4, 0); sh.add(box(1.7, 3.8, 1.7, stone, 0, -1.7, 0)); const el = grp(sh, 0, -3.6, 0); el.add(box(1.9, 3.4, 1.9, stoneD, 0, -1.6, 0)); el.add(box(2.5, 2.2, 2.5, stone, 0, -4.0, 0)); return [sh, el]; };
   const leg = (s) => { const hp = grp(hips, s * 1.5, -0.4, 0); hp.add(box(2.0, 3.2, 2.0, stone, 0, -1.5, 0)); const kn = grp(hp, 0, -3.1, 0); kn.add(box(2.2, 3.0, 2.2, stoneD, 0, -1.4, 0)); kn.add(box(2.6, 1.0, 3.6, stone, 0, -3.0, 0.5)); return [hp, kn]; };
   const [shL, elL] = arm(1), [shR, elR] = arm(-1), [hipL, kneeL] = leg(1), [hipR, kneeR] = leg(-1);
-  const crystals = [crystal(kneeL, 0, 0.1, 1.25, 4), crystal(kneeR, 0, 0.1, 1.25, 4), crystal(torso, 0, 3.0, 2.0, 9)];
+  const crystals = [crystal(kneeL, 0, 0.1, 1.25, 10), crystal(kneeR, 0, 0.1, 1.25, 10), crystal(torso, 0, 3.0, 2.0, 34)];
 
   // ground telegraphs and effects
   const ringM = new THREE.MeshBasicMaterial({ color: '#ffd9a0', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
@@ -82,6 +82,8 @@ export function createBoss(scene, world, player, fx, audio, ui, quest) {
     update(dt, elapsed) {
       const p = player.pos, dx = p.x - S.x, dz = p.z - S.z, d = Math.hypot(dx, dz), gy = ground(), alive = player.dead <= 0;
       S.t -= dt; S.cd -= dt;
+      // leave the arena and it settles back to sleep, whole again
+      if (S.st !== 'sleep' && S.st !== 'dead' && Math.hypot(p.x - A.x, p.z - A.z) > A.r + 40) { reset(); return; }
       const rage = S.kneels > 0 ? 0.72 : 1;                         // second act: everything comes faster
 
       if (S.st === 'sleep') {
@@ -108,7 +110,7 @@ export function createBoss(scene, world, player, fx, audio, ui, quest) {
         if (!alive) S.cd = 1.5;
       } else if (S.st === 'lift') {
         if (S.t <= 0) {                                                // the stomp lands
-          S.st = 'stuck'; S.t = 2.7; setPose('stuck', 22);
+          S.st = 'stuck'; S.t = 2.3; setPose('stuck', 22);
           audio.stomp(); ui.shake(0.55); fx.smoke(S.x, gy, S.z, '#d6c9b0', 18, 2.2); shock(false); if (S.kneels > 0) shock(true);
           if (d < 4.6 && Math.abs(p.y - gy) < 3) player.hurt(30, S.x, S.z);
         }
@@ -157,21 +159,22 @@ export function createBoss(scene, world, player, fx, audio, ui, quest) {
 
       // crystals: glow when open, take the sword only then
       const sw = player.atk > 0 ? 1 - player.atk / 0.3 : -1, swinging = sw > 0.15 && sw < 0.8;
+      let struck = false;                                           // one crystal per swing
       crystals.forEach((c, i) => {
         if (c.hp <= 0) return;
         const open = exposed(i) && S.st !== 'sleep';
         c.mat.emissiveIntensity = open ? 5 + Math.sin(elapsed * 9) * 1.5 : 0.7;
         c.m.rotation.y = elapsed * (open ? 2.5 : 0.4);
         c.m.getWorldPosition(c.wp);
-        if (swinging && c.hitId !== player.atkId && S.st !== 'sleep' && S.st !== 'wake' && Math.hypot(c.wp.x - p.x, c.wp.z - p.z) < 4.2 && c.wp.y - p.y < 7.5) {
-          c.hitId = player.atkId;
+        if (swinging && !struck && c.hitId !== player.atkId && S.st !== 'sleep' && S.st !== 'wake' && Math.hypot(c.wp.x - p.x, c.wp.z - p.z) < 4.2 && c.wp.y - p.y < 7.5) {
+          c.hitId = player.atkId; struck = true; crystals.forEach((o) => { o.hitId = player.atkId; });
           if (!open) { audio.clank(); fx.hit(c.wp.x, c.wp.y, c.wp.z, '#cfd6dc'); ui.hitstop(0.03, 0.05); return; }
           c.hp -= player.atkN === 2 ? 2 : 1; audio.hit(); fx.hit(c.wp.x, c.wp.y, c.wp.z, '#7fe9ff'); ui.hitstop(0.07, 0.16); ui.boss(hp() / total());
           if (c.hp <= 0) {
             c.m.visible = false; audio.crystal(); fx.sparks(c.wp.x, c.wp.y, c.wp.z); ui.hitstop(0.14, 0.4); ui.flash();
             if (crystals[2].hp <= 0) {                                   // the end
               S.st = 'dead'; S.deadT = 0; setPose('dead', 1.6); ui.boss(null); audio.roar(); audio.victory(); ui.shake(0.8); ui.win();
-            } else if (crystals[0].hp <= 0 && crystals[1].hp <= 0) { S.st = 'kneel'; S.t = 7.5; S.kneels++; setPose('kneel', 3); audio.roar(); ui.shake(0.6); ui.say('Ele cai de joelhos. O peito!'); }
+            } else if (crystals[0].hp <= 0 && crystals[1].hp <= 0) { S.st = 'kneel'; S.t = 5.0; S.kneels++; setPose('kneel', 3); audio.roar(); ui.shake(0.6); ui.say('Ele cai de joelhos. O peito!'); }
           }
         }
       });

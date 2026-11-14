@@ -33,6 +33,7 @@ export function createQuest(scene, world, player, ui, onPick) {
   return {
     get count() { return count; }, total: embers.length, embers,
     takenIdx() { return embers.filter((e) => e.taken).map((e) => e.i); },
+    takeRemote(i) { const e = embers[i]; if (e && !e.taken) { take(e, false); e.beam.visible = false; } },
     restore(list) { (list || []).forEach((i) => { if (embers[i] && !embers[i].taken) take(embers[i], true); }); },
     update(dt, elapsed) {
       const p = player.pos;

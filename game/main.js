@@ -12,6 +12,7 @@ import { createGrass } from './grass.js';
 import { Player, createRemote, DEFAULT_LOOK } from './player.js';
 import { createLookPanel } from './menu.js';
 import { createNet } from './net.js';
+import { createLife } from './life.js';
 import { shared } from './shade.js';
 import { createQuest } from './quest.js';
 import { createAudio } from './audio.js';
@@ -117,6 +118,7 @@ const cui = {
 };
 $('win-go').addEventListener('click', () => { winEl.classList.add('hidden'); const l = canvas.requestPointerLock && canvas.requestPointerLock(); if (l && l.catch) l.catch(() => {}); });
 const combat = createCombat(scene, world, player, fx, audio, cui);
+const life = createLife(scene, world, player, audio);
 const boss = createBoss(scene, world, player, fx, audio, cui, quest);
 function respawn() {
   stats.deaths++;
@@ -212,7 +214,7 @@ let elapsed = 0, uiT = 0, fpsAcc = 0, fpsN = 0, freeze = 0, flash = 0;
 const prMax = Math.min(devicePixelRatio, 1.5); let pr = prMax;
 function sim(dt) {
   const wasDead = player.dead > 0;
-  elapsed += dt; player.update(dt, elapsed); quest.update(dt, elapsed); combat.update(dt, elapsed); boss.update(dt, elapsed);
+  elapsed += dt; player.update(dt, elapsed); quest.update(dt, elapsed); combat.update(dt, elapsed); boss.update(dt, elapsed); life.update(dt, elapsed);
   if (wasDead && player.dead <= 0) respawn();
   for (const ev of player.events) {
     const p = player.pos, wet = p.y < world.WATER + 0.25, dirt = world.trailDist(p.x, p.z) < 2.6, soil = dirt ? '#d9bf94' : '#b9dc8a';

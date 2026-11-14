@@ -8,15 +8,22 @@ Aventura 3D em mundo aberto, no navegador. Sem backend, sem build, sem arquivos 
 python serve.py
 ```
 
-Abrir `http://localhost:5174`. Depois de atualizar o código, recarregar com Ctrl+F5. Precisa de servidor (módulos ES não abrem por `file://`) e de internet na primeira carga (three.js vem de CDN).
+Abrir `http://localhost:5174`. `serve.py` desliga o cache do navegador, então recarregar sempre roda o código atual. Precisa de servidor (módulos ES não abrem por `file://`) e de internet na primeira carga (three.js vem de CDN).
 
 ## Objetivo
 
-Seguir a trilha, explorar as ruínas e juntar as 16 brasas. Cada uma aumenta o fôlego; com todas, a Torre desperta.
+Seguir a trilha, juntar brasas nas ruínas, vencer o que as guarda e derrubar o Colosso aos pés da Torre (ele acorda com 10 brasas).
 
 ## Controles
 
-WASD mover · mouse câmera · Shift correr · Espaço pular · Q ou botão direito rolar · roda do mouse zoom · M som · T (segurar) acelera o tempo · setas giram a câmera
+- WASD mover · mouse câmera · roda do mouse zoom · setas giram a câmera
+- Clique ou F atacar (combo de 3) · Q ou botão direito rolar · Espaço pular · Shift correr
+- Ande contra uma parede para escalar: W sobe, S desce, Espaço solta
+- M som · T (segurar) acelera o tempo
+
+## Jogar com amigos
+
+Na tela inicial: **criar sala** mostra um código; o amigo digita o código em **entrar na sala** (ou abre o link, clicando no código durante o jogo para copiar). Para isso a pasta precisa estar hospedada em algum host estático (GitHub Pages, Vercel), ou todos na mesma máquina/rede.
 
 ## Estrutura
 
@@ -30,6 +37,11 @@ WASD mover · mouse câmera · Shift correr · Espaço pular · Q ou botão dire
 - `game/quest.js` — brasas (objetivo) 
 - `game/audio.js` — som procedural (WebAudio)
 - `game/fx.js` — partículas
+- `game/combat.js` — inimigos, orbes, golpes
+- `game/boss.js` — o Colosso
+- `game/net.js` — online P2P (PeerJS)
+- `game/menu.js` — customização do personagem
+- `game/life.js` — pássaros
 - `game/noise.js` — ruído e RNG com seed
 - `docs/VISAO.md` — direção do jogo e próximas etapas
 

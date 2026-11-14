@@ -89,6 +89,33 @@ Andar 6,2 m/s, correr 10,5 m/s com gasto de fôlego, pulo de 1,75 m, rolamento d
 - Brasa voa até o personagem; ao pegar: micro-congelamento, clarão, faíscas, acorde.
 - Lanternas acendem quando ele passa, com som; arbustos farfalham e soltam folhas; árvore balança folhas na trombada.
 
+### Jogo completo: escalada, combate, chefe, final — feito
+
+**Arco do jogo**: seguir a trilha, juntar brasas, enfrentar o que guarda as ruínas, acordar e derrubar o Colosso aos pés da Torre.
+
+- **Escalada**: andar contra uma parede agarra; W sobe, S desce, A/D desliza, Espaço chuta pra longe, Shift apressa. Gasta fôlego; sem fôlego, cai. Dá pra ficar em cima de blocos, pilares e lintéis. Brasas no topo dos portais pedem escalada.
+- **Espada**: combo de três golpes (dois cortes e um de cima, que vale dobrado), com pequeno avanço. Clique ou F.
+- **Vida**: cinco pontos. Rolar deixa intocável. Lanterna acesa cura e vira ponto de renascimento.
+- **Sombras**: rondam, perseguem, avisam (incham, olhos acendem) e investem.
+- **Sentinelas**: totens que disparam orbes lentos; a espada rebate o orbe de volta.
+- **Luzes de cura** caem dos inimigos e voam até você.
+- **O Colosso**: dorme até você ter 10 brasas. Pisão com onda de choque (pule ou role), varrida de braço, pedras arremessadas com marca no chão. Cristais nos joelhos só abrem quando a perna fica presa depois do pisão; com os dois quebrados ele ajoelha e mostra o peito. Sair da arena faz ele voltar a dormir inteiro.
+- **Final**: tela de vitória com tempo, brasas, quedas e inimigos; dá pra continuar explorando.
+
+### Personagem e amigos — feito
+
+- **Customização**: pele, cabelo, túnica, capa, barra e cachecol por paleta; rabo de cavalo e chapéu de palha; botão aleatório. Vista ao vivo, salva no navegador.
+- **Online**: criar sala gera um código de 5 letras; quem tem o código (ou o link) entra. Até 4. Cada um vê o outro com seu visual e sua animação; brasas e hora do dia são compartilhadas.
+- **Pássaros** em bandos que revoam quando você chega perto.
+
+### Verificado nesta etapa
+
+- Escalada: 10 de 12 pilares do primeiro círculo subidos até o topo por simulação (os outros 2 têm bloco caído na frente).
+- Colisão com altura: 13.600 passos aleatórios, nenhuma queda pelo chão nem valor inválido.
+- Combate: inimigo morre com golpes, jogador toma dano, morre e renasce no checkpoint.
+- Chefe: luta inteira simulada até a vitória (acordar, pisar, prender, ajoelhar, cair).
+- Online: duas abas, entrada por código, posições e brasas sincronizando nos dois sentidos, sem erro no console.
+
 ## Próximas etapas
 
 1. **Polir o personagem** — modelo com mais forma (mãos, rosto, roupa com dobra), pés que acompanham o chão (IK), transições de animação, poeira e pegadas.
